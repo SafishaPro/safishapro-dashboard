@@ -17,8 +17,8 @@ function DispatchPage() {
             <div className="p-3 text-xs uppercase text-muted-foreground border-b">Cleaner</div>
             {hours.map((h) => <div key={h} className="p-3 text-xs uppercase text-muted-foreground border-b border-l text-center">{h}:00</div>)}
             {cleaners.map((c) => (
-              <>
-                <div key={c.id} className="p-3 border-b font-medium text-sm">{c.name}</div>
+              <div key={c.id} className="contents">
+                <div className="p-3 border-b font-medium text-sm">{c.name}</div>
                 {hours.map((h) => {
                   const job = bookings.find((b) => b.cleaner === c.name && parseInt(b.date.split(" ")[1]) === h);
                   return (
@@ -32,7 +32,7 @@ function DispatchPage() {
                     </div>
                   );
                 })}
-              </>
+              </div>
             ))}
           </div>
         </div>
