@@ -9,38 +9,322 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as DashRouteImport } from './routes/_dash'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashTicketsRouteImport } from './routes/_dash.tickets'
+import { Route as DashStaffRouteImport } from './routes/_dash.staff'
+import { Route as DashSettingsRouteImport } from './routes/_dash.settings'
+import { Route as DashPayoutsRouteImport } from './routes/_dash.payouts'
+import { Route as DashPaymentsRouteImport } from './routes/_dash.payments'
+import { Route as DashNotificationsRouteImport } from './routes/_dash.notifications'
+import { Route as DashDispatchRouteImport } from './routes/_dash.dispatch'
+import { Route as DashDashboardRouteImport } from './routes/_dash.dashboard'
+import { Route as DashCustomersRouteImport } from './routes/_dash.customers'
+import { Route as DashCleanersRouteImport } from './routes/_dash.cleaners'
+import { Route as DashBookingsRouteImport } from './routes/_dash.bookings'
+import { Route as DashAvailabilityRouteImport } from './routes/_dash.availability'
+import { Route as DashAuditRouteImport } from './routes/_dash.audit'
+import { Route as DashAnalyticsRouteImport } from './routes/_dash.analytics'
+import { Route as DashPortalCustomerProfileRouteImport } from './routes/_dash.portal.customer.profile'
+import { Route as DashPortalCustomerInvoicesRouteImport } from './routes/_dash.portal.customer.invoices'
+import { Route as DashPortalCustomerBookingsRouteImport } from './routes/_dash.portal.customer.bookings'
+import { Route as DashPortalCleanerScheduleRouteImport } from './routes/_dash.portal.cleaner.schedule'
+import { Route as DashPortalCleanerJobsRouteImport } from './routes/_dash.portal.cleaner.jobs'
+import { Route as DashPortalCleanerEarningsRouteImport } from './routes/_dash.portal.cleaner.earnings'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashRoute = DashRouteImport.update({
+  id: '/_dash',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashTicketsRoute = DashTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashStaffRoute = DashStaffRouteImport.update({
+  id: '/staff',
+  path: '/staff',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashSettingsRoute = DashSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashPayoutsRoute = DashPayoutsRouteImport.update({
+  id: '/payouts',
+  path: '/payouts',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashPaymentsRoute = DashPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashNotificationsRoute = DashNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashDispatchRoute = DashDispatchRouteImport.update({
+  id: '/dispatch',
+  path: '/dispatch',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashDashboardRoute = DashDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashCustomersRoute = DashCustomersRouteImport.update({
+  id: '/customers',
+  path: '/customers',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashCleanersRoute = DashCleanersRouteImport.update({
+  id: '/cleaners',
+  path: '/cleaners',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashBookingsRoute = DashBookingsRouteImport.update({
+  id: '/bookings',
+  path: '/bookings',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashAvailabilityRoute = DashAvailabilityRouteImport.update({
+  id: '/availability',
+  path: '/availability',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashAuditRoute = DashAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashAnalyticsRoute = DashAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashPortalCustomerProfileRoute =
+  DashPortalCustomerProfileRouteImport.update({
+    id: '/portal/customer/profile',
+    path: '/portal/customer/profile',
+    getParentRoute: () => DashRoute,
+  } as any)
+const DashPortalCustomerInvoicesRoute =
+  DashPortalCustomerInvoicesRouteImport.update({
+    id: '/portal/customer/invoices',
+    path: '/portal/customer/invoices',
+    getParentRoute: () => DashRoute,
+  } as any)
+const DashPortalCustomerBookingsRoute =
+  DashPortalCustomerBookingsRouteImport.update({
+    id: '/portal/customer/bookings',
+    path: '/portal/customer/bookings',
+    getParentRoute: () => DashRoute,
+  } as any)
+const DashPortalCleanerScheduleRoute =
+  DashPortalCleanerScheduleRouteImport.update({
+    id: '/portal/cleaner/schedule',
+    path: '/portal/cleaner/schedule',
+    getParentRoute: () => DashRoute,
+  } as any)
+const DashPortalCleanerJobsRoute = DashPortalCleanerJobsRouteImport.update({
+  id: '/portal/cleaner/jobs',
+  path: '/portal/cleaner/jobs',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashPortalCleanerEarningsRoute =
+  DashPortalCleanerEarningsRouteImport.update({
+    id: '/portal/cleaner/earnings',
+    path: '/portal/cleaner/earnings',
+    getParentRoute: () => DashRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/analytics': typeof DashAnalyticsRoute
+  '/audit': typeof DashAuditRoute
+  '/availability': typeof DashAvailabilityRoute
+  '/bookings': typeof DashBookingsRoute
+  '/cleaners': typeof DashCleanersRoute
+  '/customers': typeof DashCustomersRoute
+  '/dashboard': typeof DashDashboardRoute
+  '/dispatch': typeof DashDispatchRoute
+  '/notifications': typeof DashNotificationsRoute
+  '/payments': typeof DashPaymentsRoute
+  '/payouts': typeof DashPayoutsRoute
+  '/settings': typeof DashSettingsRoute
+  '/staff': typeof DashStaffRoute
+  '/tickets': typeof DashTicketsRoute
+  '/portal/cleaner/earnings': typeof DashPortalCleanerEarningsRoute
+  '/portal/cleaner/jobs': typeof DashPortalCleanerJobsRoute
+  '/portal/cleaner/schedule': typeof DashPortalCleanerScheduleRoute
+  '/portal/customer/bookings': typeof DashPortalCustomerBookingsRoute
+  '/portal/customer/invoices': typeof DashPortalCustomerInvoicesRoute
+  '/portal/customer/profile': typeof DashPortalCustomerProfileRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/analytics': typeof DashAnalyticsRoute
+  '/audit': typeof DashAuditRoute
+  '/availability': typeof DashAvailabilityRoute
+  '/bookings': typeof DashBookingsRoute
+  '/cleaners': typeof DashCleanersRoute
+  '/customers': typeof DashCustomersRoute
+  '/dashboard': typeof DashDashboardRoute
+  '/dispatch': typeof DashDispatchRoute
+  '/notifications': typeof DashNotificationsRoute
+  '/payments': typeof DashPaymentsRoute
+  '/payouts': typeof DashPayoutsRoute
+  '/settings': typeof DashSettingsRoute
+  '/staff': typeof DashStaffRoute
+  '/tickets': typeof DashTicketsRoute
+  '/portal/cleaner/earnings': typeof DashPortalCleanerEarningsRoute
+  '/portal/cleaner/jobs': typeof DashPortalCleanerJobsRoute
+  '/portal/cleaner/schedule': typeof DashPortalCleanerScheduleRoute
+  '/portal/customer/bookings': typeof DashPortalCustomerBookingsRoute
+  '/portal/customer/invoices': typeof DashPortalCustomerInvoicesRoute
+  '/portal/customer/profile': typeof DashPortalCustomerProfileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_dash': typeof DashRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_dash/analytics': typeof DashAnalyticsRoute
+  '/_dash/audit': typeof DashAuditRoute
+  '/_dash/availability': typeof DashAvailabilityRoute
+  '/_dash/bookings': typeof DashBookingsRoute
+  '/_dash/cleaners': typeof DashCleanersRoute
+  '/_dash/customers': typeof DashCustomersRoute
+  '/_dash/dashboard': typeof DashDashboardRoute
+  '/_dash/dispatch': typeof DashDispatchRoute
+  '/_dash/notifications': typeof DashNotificationsRoute
+  '/_dash/payments': typeof DashPaymentsRoute
+  '/_dash/payouts': typeof DashPayoutsRoute
+  '/_dash/settings': typeof DashSettingsRoute
+  '/_dash/staff': typeof DashStaffRoute
+  '/_dash/tickets': typeof DashTicketsRoute
+  '/_dash/portal/cleaner/earnings': typeof DashPortalCleanerEarningsRoute
+  '/_dash/portal/cleaner/jobs': typeof DashPortalCleanerJobsRoute
+  '/_dash/portal/cleaner/schedule': typeof DashPortalCleanerScheduleRoute
+  '/_dash/portal/customer/bookings': typeof DashPortalCustomerBookingsRoute
+  '/_dash/portal/customer/invoices': typeof DashPortalCustomerInvoicesRoute
+  '/_dash/portal/customer/profile': typeof DashPortalCustomerProfileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/analytics'
+    | '/audit'
+    | '/availability'
+    | '/bookings'
+    | '/cleaners'
+    | '/customers'
+    | '/dashboard'
+    | '/dispatch'
+    | '/notifications'
+    | '/payments'
+    | '/payouts'
+    | '/settings'
+    | '/staff'
+    | '/tickets'
+    | '/portal/cleaner/earnings'
+    | '/portal/cleaner/jobs'
+    | '/portal/cleaner/schedule'
+    | '/portal/customer/bookings'
+    | '/portal/customer/invoices'
+    | '/portal/customer/profile'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/login'
+    | '/analytics'
+    | '/audit'
+    | '/availability'
+    | '/bookings'
+    | '/cleaners'
+    | '/customers'
+    | '/dashboard'
+    | '/dispatch'
+    | '/notifications'
+    | '/payments'
+    | '/payouts'
+    | '/settings'
+    | '/staff'
+    | '/tickets'
+    | '/portal/cleaner/earnings'
+    | '/portal/cleaner/jobs'
+    | '/portal/cleaner/schedule'
+    | '/portal/customer/bookings'
+    | '/portal/customer/invoices'
+    | '/portal/customer/profile'
+  id:
+    | '__root__'
+    | '/'
+    | '/_dash'
+    | '/login'
+    | '/_dash/analytics'
+    | '/_dash/audit'
+    | '/_dash/availability'
+    | '/_dash/bookings'
+    | '/_dash/cleaners'
+    | '/_dash/customers'
+    | '/_dash/dashboard'
+    | '/_dash/dispatch'
+    | '/_dash/notifications'
+    | '/_dash/payments'
+    | '/_dash/payouts'
+    | '/_dash/settings'
+    | '/_dash/staff'
+    | '/_dash/tickets'
+    | '/_dash/portal/cleaner/earnings'
+    | '/_dash/portal/cleaner/jobs'
+    | '/_dash/portal/cleaner/schedule'
+    | '/_dash/portal/customer/bookings'
+    | '/_dash/portal/customer/invoices'
+    | '/_dash/portal/customer/profile'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DashRoute: typeof DashRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_dash': {
+      id: '/_dash'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof DashRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +332,212 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_dash/tickets': {
+      id: '/_dash/tickets'
+      path: '/tickets'
+      fullPath: '/tickets'
+      preLoaderRoute: typeof DashTicketsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/staff': {
+      id: '/_dash/staff'
+      path: '/staff'
+      fullPath: '/staff'
+      preLoaderRoute: typeof DashStaffRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/settings': {
+      id: '/_dash/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof DashSettingsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/payouts': {
+      id: '/_dash/payouts'
+      path: '/payouts'
+      fullPath: '/payouts'
+      preLoaderRoute: typeof DashPayoutsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/payments': {
+      id: '/_dash/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof DashPaymentsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/notifications': {
+      id: '/_dash/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof DashNotificationsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/dispatch': {
+      id: '/_dash/dispatch'
+      path: '/dispatch'
+      fullPath: '/dispatch'
+      preLoaderRoute: typeof DashDispatchRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/dashboard': {
+      id: '/_dash/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashDashboardRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/customers': {
+      id: '/_dash/customers'
+      path: '/customers'
+      fullPath: '/customers'
+      preLoaderRoute: typeof DashCustomersRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/cleaners': {
+      id: '/_dash/cleaners'
+      path: '/cleaners'
+      fullPath: '/cleaners'
+      preLoaderRoute: typeof DashCleanersRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/bookings': {
+      id: '/_dash/bookings'
+      path: '/bookings'
+      fullPath: '/bookings'
+      preLoaderRoute: typeof DashBookingsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/availability': {
+      id: '/_dash/availability'
+      path: '/availability'
+      fullPath: '/availability'
+      preLoaderRoute: typeof DashAvailabilityRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/audit': {
+      id: '/_dash/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof DashAuditRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/analytics': {
+      id: '/_dash/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof DashAnalyticsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/customer/profile': {
+      id: '/_dash/portal/customer/profile'
+      path: '/portal/customer/profile'
+      fullPath: '/portal/customer/profile'
+      preLoaderRoute: typeof DashPortalCustomerProfileRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/customer/invoices': {
+      id: '/_dash/portal/customer/invoices'
+      path: '/portal/customer/invoices'
+      fullPath: '/portal/customer/invoices'
+      preLoaderRoute: typeof DashPortalCustomerInvoicesRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/customer/bookings': {
+      id: '/_dash/portal/customer/bookings'
+      path: '/portal/customer/bookings'
+      fullPath: '/portal/customer/bookings'
+      preLoaderRoute: typeof DashPortalCustomerBookingsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/cleaner/schedule': {
+      id: '/_dash/portal/cleaner/schedule'
+      path: '/portal/cleaner/schedule'
+      fullPath: '/portal/cleaner/schedule'
+      preLoaderRoute: typeof DashPortalCleanerScheduleRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/cleaner/jobs': {
+      id: '/_dash/portal/cleaner/jobs'
+      path: '/portal/cleaner/jobs'
+      fullPath: '/portal/cleaner/jobs'
+      preLoaderRoute: typeof DashPortalCleanerJobsRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/portal/cleaner/earnings': {
+      id: '/_dash/portal/cleaner/earnings'
+      path: '/portal/cleaner/earnings'
+      fullPath: '/portal/cleaner/earnings'
+      preLoaderRoute: typeof DashPortalCleanerEarningsRouteImport
+      parentRoute: typeof DashRoute
+    }
   }
 }
 
+interface DashRouteChildren {
+  DashAnalyticsRoute: typeof DashAnalyticsRoute
+  DashAuditRoute: typeof DashAuditRoute
+  DashAvailabilityRoute: typeof DashAvailabilityRoute
+  DashBookingsRoute: typeof DashBookingsRoute
+  DashCleanersRoute: typeof DashCleanersRoute
+  DashCustomersRoute: typeof DashCustomersRoute
+  DashDashboardRoute: typeof DashDashboardRoute
+  DashDispatchRoute: typeof DashDispatchRoute
+  DashNotificationsRoute: typeof DashNotificationsRoute
+  DashPaymentsRoute: typeof DashPaymentsRoute
+  DashPayoutsRoute: typeof DashPayoutsRoute
+  DashSettingsRoute: typeof DashSettingsRoute
+  DashStaffRoute: typeof DashStaffRoute
+  DashTicketsRoute: typeof DashTicketsRoute
+  DashPortalCleanerEarningsRoute: typeof DashPortalCleanerEarningsRoute
+  DashPortalCleanerJobsRoute: typeof DashPortalCleanerJobsRoute
+  DashPortalCleanerScheduleRoute: typeof DashPortalCleanerScheduleRoute
+  DashPortalCustomerBookingsRoute: typeof DashPortalCustomerBookingsRoute
+  DashPortalCustomerInvoicesRoute: typeof DashPortalCustomerInvoicesRoute
+  DashPortalCustomerProfileRoute: typeof DashPortalCustomerProfileRoute
+}
+
+const DashRouteChildren: DashRouteChildren = {
+  DashAnalyticsRoute: DashAnalyticsRoute,
+  DashAuditRoute: DashAuditRoute,
+  DashAvailabilityRoute: DashAvailabilityRoute,
+  DashBookingsRoute: DashBookingsRoute,
+  DashCleanersRoute: DashCleanersRoute,
+  DashCustomersRoute: DashCustomersRoute,
+  DashDashboardRoute: DashDashboardRoute,
+  DashDispatchRoute: DashDispatchRoute,
+  DashNotificationsRoute: DashNotificationsRoute,
+  DashPaymentsRoute: DashPaymentsRoute,
+  DashPayoutsRoute: DashPayoutsRoute,
+  DashSettingsRoute: DashSettingsRoute,
+  DashStaffRoute: DashStaffRoute,
+  DashTicketsRoute: DashTicketsRoute,
+  DashPortalCleanerEarningsRoute: DashPortalCleanerEarningsRoute,
+  DashPortalCleanerJobsRoute: DashPortalCleanerJobsRoute,
+  DashPortalCleanerScheduleRoute: DashPortalCleanerScheduleRoute,
+  DashPortalCustomerBookingsRoute: DashPortalCustomerBookingsRoute,
+  DashPortalCustomerInvoicesRoute: DashPortalCustomerInvoicesRoute,
+  DashPortalCustomerProfileRoute: DashPortalCustomerProfileRoute,
+}
+
+const DashRouteWithChildren = DashRoute._addFileChildren(DashRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DashRoute: DashRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
