@@ -19,9 +19,7 @@ function DashLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  if (!user) return <Navigate to="/login" replace />;
-
-  const items = useMemo(() => navFor(user.role), [user.role]);
+  const items = useMemo(() => (user ? navFor(user.role) : []), [user?.role]);
   const sections = useMemo(() => {
     const map = new Map<string, typeof items>();
     items.forEach((i) => {
@@ -30,6 +28,8 @@ function DashLayout() {
     });
     return Array.from(map.entries());
   }, [items]);
+
+  if (!user) return <Navigate to="/login" replace />;
 
   const initials = user.name.slice(0, 2).toUpperCase();
 
