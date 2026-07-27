@@ -83,7 +83,7 @@
   --input: oklch(0.91 0.01 220);
   --ring: oklch(0.55 0.14 200);
   --chart-1: oklch(0.55 0.14 200);
-  --chart-2: oklch(0.65 0.15 160);
+  --chart-2: oklch(0.68 0.13 235);
   --chart-3: oklch(0.60 0.16 250);
   --chart-4: oklch(0.75 0.15 80);
   --chart-5: oklch(0.65 0.20 30);
@@ -118,7 +118,7 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.551 0.027 264.364);
   --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-2: oklch(0.70 0.15 245);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
