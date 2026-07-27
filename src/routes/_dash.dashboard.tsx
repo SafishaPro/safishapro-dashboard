@@ -20,7 +20,7 @@ function DashboardPage() {
             <div className="text-sm text-muted-foreground">{k.label}</div>
             <div className="mt-2 flex items-end justify-between">
               <div className="text-3xl font-semibold tracking-tight">{k.value}</div>
-              <div className={`text-xs flex items-center gap-1 ${k.tone === "up" ? "text-emerald-600" : "text-destructive"}`}>
+              <div className={`text-xs flex items-center gap-1 ${k.tone === "up" ? "text-blue-600" : "text-destructive"}`}>
                 {k.tone === "up" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                 {k.delta}
               </div>
@@ -109,14 +109,14 @@ function DashboardPage() {
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    Completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    Completed: "bg-blue-100 text-blue-700 border-blue-200",
     "In Progress": "bg-sky-100 text-sky-700 border-sky-200",
     Pending: "bg-amber-100 text-amber-700 border-amber-200",
     Cancelled: "bg-rose-100 text-rose-700 border-rose-200",
-    Paid: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    Paid: "bg-blue-100 text-blue-700 border-blue-200",
     Failed: "bg-rose-100 text-rose-700 border-rose-200",
-    Verified: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Active: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    Verified: "bg-blue-100 text-blue-700 border-blue-200",
+    Active: "bg-blue-100 text-blue-700 border-blue-200",
   };
   return <span className={`inline-flex text-xs px-2 py-0.5 rounded-full border ${map[status] ?? "bg-muted text-muted-foreground border-border"}`}>{status}</span>;
 }
