@@ -19,22 +19,9 @@ function LoginPage() {
   const [password, setPassword] = useState("demo1234");
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-sidebar text-sidebar-foreground">
-        <div className="flex items-center gap-2 text-lg font-semibold">
-          <div className="h-9 w-9 rounded-lg bg-sidebar-primary grid place-items-center">
-            <Sparkles className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
-          SafishaPro
-        </div>
-        <div className="space-y-4">
-          <h1 className="text-4xl font-semibold leading-tight">Operations, cleaners, and payments — in one place.</h1>
-          <p className="text-sidebar-foreground/70 max-w-md">The internal control center for dispatchers, finance, support and admins running SafishaPro.</p>
-        </div>
-        <p className="text-xs text-sidebar-foreground/50">© SafishaPro 2026</p>
-      </div>
+    <div className="min-h-screen flex bg-background">
+      <div className="flex-1 flex items-center justify-center p-6">
 
-      <div className="flex items-center justify-center p-6">
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
             <h2 className="text-2xl font-semibold">Sign in</h2>
