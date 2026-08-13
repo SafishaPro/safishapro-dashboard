@@ -1,51 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { bookings } from "@/lib/mock-data";
-import { StatusBadge } from "./_dash.dashboard";
-import { Plus } from "lucide-react";
+import { bookingsApi, type Booking } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash/bookings")({ component: BookingsPage });
-
-function BookingsPage() {
-  const filters = ["All", "Pending", "In Progress", "Completed", "Cancelled"] as const;
-  return (
-    <div>
-      <PageHeader title="Bookings" description="All bookings across the platform." actions={<Button><Plus className="h-4 w-4 mr-2" />New booking</Button>} />
-      <Tabs defaultValue="All">
-        <TabsList>
-          {filters.map((f) => <TabsTrigger key={f} value={f}>{f}</TabsTrigger>)}
-        </TabsList>
-        {filters.map((f) => (
-          <TabsContent key={f} value={f} className="mt-4">
-            <Card className="p-4">
-              <Table>
-                <TableHeader><TableRow>
-                  <TableHead>ID</TableHead><TableHead>Customer</TableHead><TableHead>Cleaner</TableHead>
-                  <TableHead>Service</TableHead><TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead><TableHead className="text-right">Amount (KES)</TableHead>
-                </TableRow></TableHeader>
-                <TableBody>
-                  {bookings.filter((b) => f === "All" ? true : b.status === f).map((b) => (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-mono text-xs">{b.id}</TableCell>
-                      <TableCell className="font-medium">{b.customer}</TableCell>
-                      <TableCell>{b.cleaner}</TableCell>
-                      <TableCell>{b.service}</TableCell>
-                      <TableCell>{b.date}</TableCell>
-                      <TableCell><StatusBadge status={b.status} /></TableCell>
-                      <TableCell className="text-right">{b.amount.toLocaleString()}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
-    </div>
-  );
-}
+const statuses = ["pending", "awaiting_payment", "payment_verified", "awaiting_assignment", "assigned", "cleaner_en_route", "in_progress", "completed", "payout_pending", "payout_paid", "payment_failed", "cancelled", "refund_requested", "refunded", "no_show"];
+function BookingsPage() { const [bookings, setBookings] = useState<Booking[]>([]); const [status, setStatus] = useState("all"); const [search, setSearch] = useState(""); const [city, setCity] = useState(""); const [selected, setSelected] = useState<Booking | null>(null); const [error, setError] = useState<string | null>(null); const load = async () => { try { setError(null); setBookings(await bookingsApi.list({ status: status === "all" ? undefined : status, search: search || undefined, city: city || undefined, limit: 200 })); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load bookings."); } }; useEffect(() => { load(); }, []); const mutate = async (work: () => Promise<Booking>) => { try { const updated = await work(); setSelected(updated); load(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to update booking."); } }; return <div className="space-y-6"><PageHeader title="Bookings" description="Search, inspect, assign and manage live booking status." actions={<Button variant="outline" onClick={load}>Refresh</Button>} />{error && <p className="text-sm text-destructive">{error}</p>}<Card className="p-4"><div className="mb-4 flex flex-wrap gap-3"><Input className="max-w-sm" placeholder="Search bookings, customers, or services" value={search} onChange={(e) => setSearch(e.target.value)} /><Input className="w-44" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} /><Select value={status} onValueChange={setStatus}><SelectTrigger className="w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{statuses.map((item) => <SelectItem key={item} value={item}>{item.replaceAll("_", " ")}</SelectItem>)}</SelectContent></Select><Button onClick={load}>Apply filters</Button></div><Table><TableHeader><TableRow><TableHead>Service</TableHead><TableHead>Cleaner</TableHead><TableHead>Scheduled</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{bookings.map((booking) => <TableRow key={booking.id}><TableCell><p className="font-medium">{booking.service_name}</p><p className="text-xs text-muted-foreground">{booking.package_name || "No package"} · {booking.city || "—"}</p></TableCell><TableCell>{booking.cleaner?.full_name || "Unassigned"}</TableCell><TableCell>{new Date(booking.scheduled_for).toLocaleString()}</TableCell><TableCell><Badge variant={booking.status === "completed" ? "success" : booking.status === "cancelled" || booking.status === "payment_failed" ? "destructive" : "secondary"}>{booking.status.replaceAll("_", " ")}</Badge></TableCell><TableCell className="text-right">{booking.currency} {Number(booking.quoted_price).toLocaleString()}</TableCell><TableCell className="text-right"><Button size="sm" className="bg-blue-950 text-white hover:bg-blue-900" onClick={() => setSelected(booking)}>View details</Button></TableCell></TableRow>)}{!bookings.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No bookings found.</TableCell></TableRow>}</TableBody></Table></Card><Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Booking details</DialogTitle></DialogHeader>{selected && <div className="space-y-4"><div className="grid grid-cols-2 gap-3 text-sm">{[["Service", selected.service_name], ["Package", selected.package_name], ["Status", selected.status.replaceAll("_", " ")], ["Scheduled", new Date(selected.scheduled_for).toLocaleString()], ["Cleaner", selected.cleaner?.full_name], ["Address", [selected.address_line, selected.city].filter(Boolean).join(", ")]].map(([label, value]) => <div key={String(label)}><p className="text-xs text-muted-foreground">{label}</p><p className="font-medium">{value || "—"}</p></div>)}</div><div className="flex flex-wrap gap-2"><Select onValueChange={(next) => mutate(() => bookingsApi.changeStatus(selected.id, next))}><SelectTrigger className="w-52"><SelectValue placeholder="Change status" /></SelectTrigger><SelectContent>{statuses.map((item) => <SelectItem key={item} value={item}>{item.replaceAll("_", " ")}</SelectItem>)}</SelectContent></Select><Button variant="outline" onClick={() => { const scheduled_for = window.prompt("New scheduled time (ISO 8601)", selected.scheduled_for); if (scheduled_for) mutate(() => bookingsApi.reschedule(selected.id, scheduled_for)); }}>Reschedule</Button><Button variant="destructive" onClick={() => { const reason = window.prompt("Cancellation reason"); if (reason) mutate(() => bookingsApi.cancel(selected.id, reason)); }}>Cancel booking</Button></div></div>}</DialogContent></Dialog></div>; }

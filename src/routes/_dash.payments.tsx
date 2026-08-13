@@ -1,45 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { payments } from "@/lib/mock-data";
-import { StatusBadge } from "./_dash.dashboard";
+import { paymentsApi, type Payment } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash/payments")({ component: PaymentsPage });
-
-function PaymentsPage() {
-  const total = payments.filter(p => p.status === "Paid").reduce((s, p) => s + p.amount, 0);
-  return (
-    <div>
-      <PageHeader title="Customer Payments" description="Incoming payments, invoices and M-Pesa transaction logs." />
-      <div className="grid gap-4 sm:grid-cols-3 mb-4">
-        <Card className="p-5"><div className="text-sm text-muted-foreground">Collected</div><div className="text-2xl font-semibold mt-1">KES {total.toLocaleString()}</div></Card>
-        <Card className="p-5"><div className="text-sm text-muted-foreground">Pending</div><div className="text-2xl font-semibold mt-1">KES 2,800</div></Card>
-        <Card className="p-5"><div className="text-sm text-muted-foreground">Failed</div><div className="text-2xl font-semibold mt-1">KES 12,500</div></Card>
-      </div>
-      <Card className="p-4">
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>ID</TableHead><TableHead>Booking</TableHead><TableHead>Customer</TableHead>
-            <TableHead>Method</TableHead><TableHead>Ref</TableHead><TableHead>Date</TableHead>
-            <TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {payments.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                <TableCell className="font-mono text-xs">{p.booking}</TableCell>
-                <TableCell className="font-medium">{p.customer}</TableCell>
-                <TableCell>{p.method}</TableCell>
-                <TableCell className="font-mono text-xs">{p.ref}</TableCell>
-                <TableCell>{p.date}</TableCell>
-                <TableCell><StatusBadge status={p.status} /></TableCell>
-                <TableCell className="text-right">KES {p.amount.toLocaleString()}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
-  );
-}
+function PaymentsPage() { const [payments, setPayments] = useState<Payment[]>([]); const [status, setStatus] = useState("all"); const [method, setMethod] = useState("all"); const [error, setError] = useState<string | null>(null); const load = async () => { try { setError(null); setPayments(await paymentsApi.list({ status: status === "all" ? undefined : status, method: method === "all" ? undefined : method as "dummy" | "mpesa", limit: 200 })); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load payments."); } }; useEffect(() => { load(); }, []); return <div className="space-y-6"><PageHeader title="Customer payments" description="Payment attempts and real-time transaction status." actions={<Button variant="outline" onClick={load}>Refresh</Button>} />{error && <p className="text-sm text-destructive">{error}</p>}<Card className="p-4"><div className="mb-4 flex gap-3"><Select value={status} onValueChange={setStatus}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{["initiated", "pending", "successful", "failed", "timed_out", "reversed", "refunded"].map((item) => <SelectItem key={item} value={item}>{item.replaceAll("_", " ")}</SelectItem>)}</SelectContent></Select><Select value={method} onValueChange={setMethod}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="mpesa">M-Pesa</SelectItem><SelectItem value="dummy">Dummy</SelectItem></SelectContent></Select><Button onClick={load}>Apply filters</Button></div><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Provider</TableHead><TableHead>Receipt</TableHead><TableHead>Initiated</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody>{payments.map((payment) => <TableRow key={payment.id}><TableCell className="font-mono text-xs">{payment.id}</TableCell><TableCell className="capitalize">{payment.provider}</TableCell><TableCell>{payment.receipt_number || "—"}</TableCell><TableCell>{new Date(payment.initiated_at || payment.created_at).toLocaleString()}</TableCell><TableCell><Badge variant={payment.status === "successful" ? "success" : payment.status === "failed" || payment.status === "timed_out" ? "destructive" : "secondary"}>{payment.status.replaceAll("_", " ")}</Badge></TableCell><TableCell className="text-right">{payment.currency} {Number(payment.amount).toLocaleString()}</TableCell></TableRow>)}{!payments.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No payments found.</TableCell></TableRow>}</TableBody></Table></Card></div>; }

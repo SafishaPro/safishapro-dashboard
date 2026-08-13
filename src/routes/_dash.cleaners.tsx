@@ -1,40 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { History, MapPin } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { cleaners } from "@/lib/mock-data";
-import { Star, Plus } from "lucide-react";
-import { StatusBadge } from "./_dash.dashboard";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from "@/lib/auth";
+import { usersApi, type AdminUserDetails, type ApiUser, type UserActivity } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash/cleaners")({ component: CleanersPage });
-
-function CleanersPage() {
-  return (
-    <div>
-      <PageHeader title="Cleaner Profiles" description="Onboarding status, verification and ratings." actions={<Button><Plus className="h-4 w-4 mr-2" />Onboard cleaner</Button>} />
-      <Card className="p-4">
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Zone</TableHead>
-            <TableHead>Rating</TableHead><TableHead className="text-right">Jobs</TableHead>
-            <TableHead>Verification</TableHead><TableHead>Availability</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {cleaners.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell className="font-mono text-xs">{c.id}</TableCell>
-                <TableCell className="font-medium">{c.name}</TableCell>
-                <TableCell>{c.zone}</TableCell>
-                <TableCell><span className="inline-flex items-center gap-1"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{c.rating}</span></TableCell>
-                <TableCell className="text-right">{c.jobs}</TableCell>
-                <TableCell><StatusBadge status={c.status} /></TableCell>
-                <TableCell><StatusBadge status={c.availability} /></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
-  );
-}
+function CleanersPage() { const { can } = useAuth(); const [cleaners, setCleaners] = useState<ApiUser[]>([]); const [selected, setSelected] = useState<ApiUser | null>(null); const [details, setDetails] = useState<AdminUserDetails | null>(null); const [activity, setActivity] = useState<UserActivity | null>(null); const [editing, setEditing] = useState(false); const [error, setError] = useState<string | null>(null); const load = async () => { try { setCleaners(await usersApi.list("cleaner")); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load cleaners."); } }; useEffect(() => { load(); }, []); const view = async (user: ApiUser) => { setSelected(user); setDetails(null); setActivity(null); setEditing(false); try { setDetails(await usersApi.get(user.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load cleaner details."); } }; const update = async (event: React.FormEvent) => { event.preventDefault(); if (!selected) return; try { await usersApi.update(selected.id, { full_name: selected.full_name, email: selected.email ?? undefined, phone: selected.phone ?? undefined, city: selected.city ?? undefined }); setEditing(false); await view(selected); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update cleaner."); } }; const changeStatus = async () => { if (!selected) return; try { if (selected.is_active) await usersApi.suspend(selected.id); else await usersApi.reactivate(selected.id); await view(selected); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update cleaner status."); } }; const activityFor = async () => { if (!selected) return; try { setActivity(await usersApi.activity(selected.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load activity."); } }; return <div className="space-y-6"><PageHeader title="Cleaner profiles" description="View and manage cleaner profiles, status, location and activity." actions={<Button variant="outline" onClick={load}>Refresh</Button>} />{error && <p className="text-sm text-destructive">{error}</p>}<Card className="p-4"><Table><TableHeader><TableRow><TableHead>Cleaner</TableHead><TableHead>Contact</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{cleaners.map((user) => <TableRow key={user.id}><TableCell><div className="font-medium">{user.full_name}</div><div className="text-xs text-muted-foreground">{user.city || "Location not provided"}</div></TableCell><TableCell>{user.email || user.phone || "—"}</TableCell><TableCell><Badge variant={user.is_active ? "success" : "destructive"}>{user.is_active ? "Active" : "Inactive"}</Badge></TableCell><TableCell className="text-right"><Button size="sm" className="bg-blue-950 text-white hover:bg-blue-900" onClick={() => view(user)}>View details</Button></TableCell></TableRow>)}</TableBody></Table></Card><Dialog open={Boolean(selected)} onOpenChange={(visible) => !visible && setSelected(null)}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Cleaner details</DialogTitle></DialogHeader>{selected && (editing ? <form className="grid gap-4 sm:grid-cols-2" onSubmit={update}><Field label="Full name"><Input value={selected.full_name} onChange={(e) => setSelected({ ...selected, full_name: e.target.value })} /></Field><Field label="Email"><Input value={selected.email ?? ""} onChange={(e) => setSelected({ ...selected, email: e.target.value })} /></Field><Field label="Phone"><Input value={selected.phone ?? ""} onChange={(e) => setSelected({ ...selected, phone: e.target.value })} /></Field><Field label="City"><Input value={selected.city ?? ""} onChange={(e) => setSelected({ ...selected, city: e.target.value })} /></Field><div className="sm:col-span-2 flex gap-2"><Button disabled={!can("users.update")}>Save changes</Button><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancel</Button></div></form> : <CleanerDetails user={details?.user ?? selected} details={details} activity={activity} />)}{selected && !editing && <div className="flex flex-wrap gap-2 border-t pt-4"><Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={!can("users.update")} onClick={() => setEditing(true)}>Edit cleaner</Button><Button variant="outline" disabled={!can("users.suspend", "users.reactivate")} onClick={changeStatus}>{selected.is_active ? "Suspend cleaner" : "Reactivate cleaner"}</Button><Button variant="outline" disabled={!can("audit_logs.read")} onClick={activityFor}><History />View activity</Button></div>}</DialogContent></Dialog></div>; }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><Label>{label}</Label><div className="mt-1">{children}</div></div>; }
+function CleanerDetails({ user, details, activity }: { user: ApiUser; details: AdminUserDetails | null; activity: UserActivity | null }) { const address = [user.address_description, user.city].filter(Boolean).join(", "); return <div className="space-y-4"><div className="grid grid-cols-2 gap-3 text-sm">{[["Full name", user.full_name], ["Email", user.email], ["Phone", user.phone], ["Status", user.is_active ? "Active" : "Inactive"], ["Last login", user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—"]].map(([label, value]) => <div key={String(label)}><p className="text-xs text-muted-foreground">{label}</p><p className="font-medium">{value || "—"}</p></div>)}</div><div className="rounded-lg border p-3"><p className="flex gap-2 text-sm font-medium"><MapPin className="h-4 w-4 text-blue-900" />Location</p><p className="text-sm text-muted-foreground">{address || "Address not provided"}</p>{user.residency_latitude !== null && user.residency_longitude !== null && <a className="mt-2 inline-block text-sm text-blue-900 underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${user.residency_latitude},${user.residency_longitude}`}>View on map</a>}</div>{details && <div className="grid grid-cols-2 gap-2 text-sm"><Count label="Active bookings" value={details.active_bookings.length} /><Count label="Past bookings" value={details.past_bookings.length} /><Count label="Active subscriptions" value={details.active_subscriptions.length} /><Count label="Past subscriptions" value={details.past_subscriptions.length} /></div>}{activity && <div className="max-h-40 divide-y overflow-y-auto rounded-md border">{activity.events.length ? activity.events.map((event) => <div key={event.id} className="p-2 text-sm">{event.action}<span className="ml-2 text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</span></div>) : <p className="p-2 text-sm text-muted-foreground">No recorded activity.</p>}</div>}</div>; }
+function Count({ label, value }: { label: string; value: number }) { return <div className="rounded bg-muted p-2"><p className="text-muted-foreground">{label}</p><p className="font-semibold">{value}</p></div>; }

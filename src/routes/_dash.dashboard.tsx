@@ -1,122 +1,54 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PageHeader } from "@/components/page-header";
+import { useEffect, useState } from "react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Activity, CalendarDays, CircleDollarSign, ClipboardList, Users, TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { kpis, bookingsOverTime, bookings, tickets } from "@/lib/mock-data";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { dashboardApi, type DashboardKpi, type DashboardSection, type DashboardSummary } from "@/lib/api";
 
-export const Route = createFileRoute("/_dash/dashboard")({
-  component: DashboardPage,
-});
+export const Route = createFileRoute("/_dash/dashboard")({ component: DashboardPage });
+
+type Filters = { days: number; start_date: string; end_date: string };
+const initialFilters: Filters = { days: 30, start_date: "", end_date: "" };
 
 function DashboardPage() {
-  return (
-    <div>
-      <PageHeader title="Dashboard" description="Live snapshot of platform activity and KPIs." />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-        {kpis.map((k) => (
-          <Card key={k.label} className="p-5">
-            <div className="text-sm text-muted-foreground">{k.label}</div>
-            <div className="mt-2 flex items-end justify-between">
-              <div className="text-3xl font-semibold tracking-tight">{k.value}</div>
-              <div className={`text-xs flex items-center gap-1 ${k.tone === "up" ? "text-blue-600" : "text-destructive"}`}>
-                {k.tone === "up" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {k.delta}
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2 p-5">
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="font-semibold">Bookings over time</h3>
-            <span className="text-xs text-muted-foreground">Last 7 days</span>
-          </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={bookingsOverTime}>
-                <defs>
-                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-chart-1)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--color-chart-1)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="name" stroke="var(--color-muted-foreground)" fontSize={12} />
-                <YAxis stroke="var(--color-muted-foreground)" fontSize={12} />
-                <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8 }} />
-                <Area type="monotone" dataKey="bookings" stroke="var(--color-chart-1)" fill="url(#g1)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="font-semibold">Revenue</h3>
-            <span className="text-xs text-muted-foreground">KES</span>
-          </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={bookingsOverTime}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="name" stroke="var(--color-muted-foreground)" fontSize={12} />
-                <YAxis stroke="var(--color-muted-foreground)" fontSize={12} />
-                <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8 }} />
-                <Bar dataKey="revenue" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2 mt-4">
-        <Card className="p-5">
-          <h3 className="font-semibold mb-4">Recent bookings</h3>
-          <div className="space-y-3">
-            {bookings.slice(0, 5).map((b) => (
-              <div key={b.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <div className="font-medium">{b.id} · {b.service}</div>
-                  <div className="text-xs text-muted-foreground">{b.customer} · {b.date}</div>
-                </div>
-                <StatusBadge status={b.status} />
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card className="p-5">
-          <h3 className="font-semibold mb-4">Open support tickets</h3>
-          <div className="space-y-3">
-            {tickets.map((t) => (
-              <div key={t.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <div className="font-medium">{t.subject}</div>
-                  <div className="text-xs text-muted-foreground">{t.customer} · {t.updated}</div>
-                </div>
-                <Badge variant={t.priority === "High" ? "destructive" : "secondary"}>{t.priority}</Badge>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-export function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Completed: "bg-blue-100 text-blue-700 border-blue-200",
-    "In Progress": "bg-sky-100 text-sky-700 border-sky-200",
-    Pending: "bg-amber-100 text-amber-700 border-amber-200",
-    Cancelled: "bg-rose-100 text-rose-700 border-rose-200",
-    Paid: "bg-blue-100 text-blue-700 border-blue-200",
-    Failed: "bg-rose-100 text-rose-700 border-rose-200",
-    Verified: "bg-blue-100 text-blue-700 border-blue-200",
-    Active: "bg-blue-100 text-blue-700 border-blue-200",
+  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [periodMode, setPeriodMode] = useState<"rolling" | "range">("rolling");
+  const [granularity, setGranularity] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const load = async (next = filters, mode = periodMode, nextGranularity = granularity) => {
+    if ((next.start_date && !next.end_date) || (!next.start_date && next.end_date)) { setError("A custom range needs both a start and end date."); return; }
+    setLoading(true); setError(null);
+    try {
+      const data = await dashboardApi.summary({ days: mode === "rolling" ? next.days : undefined, start_date: mode === "range" ? next.start_date : undefined, end_date: mode === "range" ? next.end_date : undefined, granularity: nextGranularity });
+      setSummary(data);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load the dashboard."); }
+    finally { setLoading(false); }
   };
-  return <span className={`inline-flex text-xs px-2 py-0.5 rounded-full border ${map[status] ?? "bg-muted text-muted-foreground border-border"}`}>{status}</span>;
+  useEffect(() => { load(initialFilters, "rolling", "daily"); }, []);
+
+  return <div className="space-y-6">
+    {/* <div className="rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-medium text-primary">SafishaPro control centre</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Operations overview</h1><p className="mt-2 text-sm text-muted-foreground">{summary ? `${summary.period.start_date} — ${summary.period.end_date} · ${summary.period.timezone}` : "Loading your live operational picture…"}</p></div><Button variant="outline" onClick={() => load()} disabled={loading}>{loading ? "Refreshing…" : "Refresh data"}</Button></div></div> */}
+    <Card className="border-primary/15 p-3 shadow-sm"><form className="flex flex-wrap items-center gap-3" onSubmit={(event) => { event.preventDefault(); load(); }}><div className="flex items-center gap-2 pr-1"><CalendarDays className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">Dashboard period</span></div><div className="inline-flex rounded-lg border bg-background p-0.5"><Button type="button" size="sm" variant={periodMode === "rolling" ? "default" : "ghost"} onClick={() => setPeriodMode("rolling")}>Rolling days</Button><Button type="button" size="sm" variant={periodMode === "range" ? "default" : "ghost"} onClick={() => setPeriodMode("range")}>Date range</Button></div><div className="inline-flex rounded-lg border bg-background p-0.5"><Button type="button" size="sm" variant={granularity === "daily" ? "default" : "ghost"} onClick={() => { setGranularity("daily"); load(filters, periodMode, "daily"); }}>Day</Button><Button type="button" size="sm" variant={granularity === "weekly" ? "default" : "ghost"} onClick={() => { setGranularity("weekly"); load(filters, periodMode, "weekly"); }}>Week</Button><Button type="button" size="sm" variant={granularity === "monthly" ? "default" : "ghost"} onClick={() => { setGranularity("monthly"); load(filters, periodMode, "monthly"); }}>Month</Button></div>{periodMode === "rolling" ? <div className="flex items-center gap-2"><Label htmlFor="rolling-days" className="sr-only">Rolling window</Label><Input id="rolling-days" className="w-24" type="number" min="1" max="366" value={filters.days} onChange={(event) => setFilters({ ...filters, days: Number(event.target.value) })} /><span className="text-sm text-muted-foreground">days</span></div> : <div className="flex flex-wrap items-center gap-2"><Label htmlFor="start-date" className="sr-only">Start date</Label><Input id="start-date" className="w-40" type="date" value={filters.start_date} onChange={(event) => setFilters({ ...filters, start_date: event.target.value })} required /><span className="text-muted-foreground">–</span><Label htmlFor="end-date" className="sr-only">End date</Label><Input id="end-date" className="w-40" type="date" value={filters.end_date} onChange={(event) => setFilters({ ...filters, end_date: event.target.value })} required /></div>}<div className="ml-auto flex gap-2"><Button type="submit" size="sm" disabled={loading}>{loading ? "Updating…" : "Apply"}</Button><Button type="button" size="sm" variant="ghost" onClick={() => { setFilters(initialFilters); setPeriodMode("rolling"); setGranularity("daily"); load(initialFilters, "rolling", "daily"); }}>Reset</Button></div></form></Card>
+    {error && <p className="text-sm text-destructive">{error}</p>}
+    {!loading && summary?.sections.filter((section) => section.key !== "my_account").map((section) => <DashboardSectionView key={section.key} section={section} />)}
+    {!loading && summary?.user_performance && <Card className="overflow-hidden"><div className="p-5 border-b"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Administrative activity leaderboard</h2><p className="text-sm text-muted-foreground mt-1">{summary.user_performance.disclaimer}</p></div><Badge variant="secondary">{summary.user_performance.total_contributors} contributors</Badge></div></div><div className="divide-y">{summary.user_performance.users.map((user) => <div key={user.user_id} className="p-4 flex items-center justify-between gap-4 text-sm"><div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-muted font-semibold">{user.rank}</span><div><div className="font-medium">{user.full_name}</div><div className="text-xs text-muted-foreground">{user.role.replaceAll("_", " ")} · {user.is_active ? "Active" : "Inactive"}</div></div></div><div className="text-right"><div className="font-semibold">{user.recorded_actions} actions</div><div className="text-xs text-muted-foreground">{user.top_action ?? "No recorded action"}</div></div></div>)}</div></Card>}
+    {!loading && summary && summary.sections.length === 0 && <Card className="p-5 text-sm text-muted-foreground">No dashboard sections are available for your current permissions.</Card>}
+  </div>;
 }
+
+function DashboardSectionView({ section }: { section: DashboardSection }) {
+  return <section className="space-y-4"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-medium uppercase tracking-wider text-primary">{section.key.replaceAll("_", " ")}</p><h2 className="text-lg font-semibold">{section.title}</h2><p className="text-sm text-muted-foreground">{section.description}</p></div><Badge variant="outline">{section.kpis.length} metrics</Badge></div>{section.kpis.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{section.kpis.map((kpi) => <KpiCard key={kpi.key} kpi={kpi} />)}</div>}{(section.trends.length > 0 || section.breakdowns.length > 0) && <div className="grid gap-4 lg:grid-cols-2">{section.trends.map((trend) => <Card key={trend.key} className="p-5"><h3 className="font-semibold mb-4">{trend.label}</h3><div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend.points}><CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" /><XAxis dataKey="date" tickFormatter={(date) => new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} fontSize={12} stroke="var(--color-muted-foreground)" /><YAxis fontSize={12} stroke="var(--color-muted-foreground)" /><Tooltip labelFormatter={(date) => new Date(`${date}T00:00:00`).toLocaleDateString()} contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8 }} /><Area dataKey="value" type="monotone" stroke="var(--color-chart-1)" fill="var(--color-chart-1)" fillOpacity={0.2} /></AreaChart></ResponsiveContainer></div></Card>)}{section.breakdowns.length > 0 && <DistributionChart data={section.breakdowns} />}</div>}</section>;
+}
+
+function KpiCard({ kpi }: { kpi: DashboardKpi }) { const delta = kpi.delta_percentage === null ? null : `${Math.abs(kpi.delta_percentage).toFixed(1)}%`; const value = kpi.key === "last_login" && typeof kpi.value === "string" ? new Date(kpi.value).toLocaleString() : kpi.unit === "KES" && typeof kpi.value === "number" ? `KES ${kpi.value.toLocaleString()}` : kpi.unit === "percent" ? `${kpi.value}%` : `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ""}`; const visual = kpi.key.includes("revenue") || kpi.unit === "KES" ? { Icon: CircleDollarSign, tone: "bg-emerald-100 text-emerald-700", border: "border-emerald-300" } : kpi.key.includes("user") || kpi.key.includes("customer") ? { Icon: Users, tone: "bg-blue-100 text-blue-800", border: "border-blue-300" } : kpi.key.includes("booking") ? { Icon: ClipboardList, tone: "bg-violet-100 text-violet-700", border: "border-violet-300" } : { Icon: Activity, tone: "bg-sky-100 text-sky-700", border: "border-sky-300" }; const Icon = visual.Icon; return <Card className={`border-l-4 ${visual.border} p-5`}><div className="flex items-start justify-between gap-3"><div className="text-sm font-medium text-muted-foreground">{kpi.label}</div><span className={`grid h-9 w-9 place-items-center rounded-lg ${visual.tone}`}><Icon className="h-4 w-4" /></span></div><div className="mt-3 flex items-end justify-between gap-2"><div className="text-2xl font-semibold tracking-tight break-words">{value}</div>{delta && <span className={`flex items-center gap-1 text-xs whitespace-nowrap ${kpi.direction === "down" ? "text-destructive" : "text-emerald-700"}`}>{kpi.direction === "down" ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}{kpi.direction === "new" ? "New" : delta}</span>}</div>{kpi.description && <p className="mt-2 text-xs text-muted-foreground">{kpi.description}</p>}</Card>; }
+
+const distributionColors = ["#1d4ed8", "#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#f43f5e", "#14b8a6", "#6366f1"];
+function DistributionChart({ data }: { data: DashboardSection["breakdowns"] }) { const [chartType, setChartType] = useState<"pie" | "bar">("pie"); return <Card className="p-5"><div className="mb-4 flex items-center justify-between gap-3"><h3 className="font-semibold">Distribution</h3><div className="inline-flex rounded-md border p-0.5"><Button size="sm" variant={chartType === "pie" ? "default" : "ghost"} onClick={() => setChartType("pie")}>Pie</Button><Button size="sm" variant={chartType === "bar" ? "default" : "ghost"} onClick={() => setChartType("bar")}>Bar</Button></div></div><div className="h-72"><ResponsiveContainer width="100%" height="100%">{chartType === "pie" ? <PieChart><Tooltip /><Legend verticalAlign="bottom" height={48} formatter={(value) => <span className="text-xs text-muted-foreground">{value}</span>} /><Pie data={data} dataKey="value" nameKey="label" innerRadius="48%" outerRadius="76%" paddingAngle={3}>{data.map((entry, index) => <Cell key={`${entry.key}-${index}`} fill={distributionColors[index % distributionColors.length]} />)}</Pie></PieChart> : <BarChart data={data}><CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" /><XAxis dataKey="label" fontSize={11} stroke="var(--color-muted-foreground)" interval={0} angle={-20} textAnchor="end" height={60} /><YAxis fontSize={12} stroke="var(--color-muted-foreground)" /><Tooltip /><Bar dataKey="value" radius={[6, 6, 0, 0]}>{data.map((entry, index) => <Cell key={`${entry.key}-${index}`} fill={distributionColors[index % distributionColors.length]} />)}</Bar></BarChart>}</ResponsiveContainer></div></Card>; }
+
+export function StatusBadge({ status }: { status: string }) { return <Badge variant="secondary">{status}</Badge>; }

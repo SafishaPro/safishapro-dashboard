@@ -1,82 +1,73 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { authApi, clearStoredSession, getStoredSession, type ApiUser, type Permission } from "./api";
 
-export type Role =
-  | "System Administrator"
-  | "Operations Manager"
-  | "Dispatcher"
-  | "Customer Support Officer"
-  | "Finance Officer"
-  | "Reporting Analyst"
-  | "Cleaner"
-  | "Customer";
-
-export const ALL_ROLES: Role[] = [
-  "System Administrator",
-  "Operations Manager",
-  "Dispatcher",
-  "Customer Support Officer",
-  "Finance Officer",
-  "Reporting Analyst",
-  "Cleaner",
-  "Customer",
-];
-
-export interface User {
-  name: string;
-  email: string;
-  role: Role;
-  avatar?: string;
-}
+export type User = ApiUser;
 
 interface AuthCtx {
   user: User | null;
-  login: (email: string, password: string) => void;
-  logout: () => void;
-  setRole: (role: Role) => void;
+  permissions: Set<string>;
+  isRestoring: boolean;
+  login: (identifier: string, password: string) => Promise<User>;
+  logout: () => Promise<void>;
+  refreshAccess: () => Promise<void>;
+  can: (...permissions: string[]) => boolean;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
-const KEY = "safisha_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [isRestoring, setIsRestoring] = useState(true);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {}
-  }, []);
-
-  const persist = (u: User | null) => {
-    setUser(u);
-    if (typeof window !== "undefined") {
-      if (u) localStorage.setItem(KEY, JSON.stringify(u));
-      else localStorage.removeItem(KEY);
-    }
+  const applyAccess = (nextUser: User, nextPermissions: Permission[] = nextUser.permissions) => {
+    setUser(nextUser);
+    setPermissions(nextPermissions.filter((permission) => permission.is_active));
   };
 
+  const refreshAccess = async () => {
+    const [currentUser, access] = await Promise.all([authApi.me(), authApi.access()]);
+    applyAccess({ ...currentUser, role: access.role, permissions: access.permissions }, access.permissions);
+  };
+
+  useEffect(() => {
+    if (!getStoredSession()) { setIsRestoring(false); return; }
+    refreshAccess().catch(() => { clearStoredSession(); setUser(null); setPermissions([]); }).finally(() => setIsRestoring(false));
+    const onExpired = () => { setUser(null); setPermissions([]); setIsRestoring(false); };
+    const onAccessChanged = () => { refreshAccess().catch(() => undefined); };
+    window.addEventListener("safishapro:session-expired", onExpired);
+    window.addEventListener("safishapro:access-changed", onAccessChanged);
+    return () => { window.removeEventListener("safishapro:session-expired", onExpired); window.removeEventListener("safishapro:access-changed", onAccessChanged); };
+  }, []);
+
+  const permissionSlugs = useMemo(() => new Set(permissions.map((permission) => permission.slug)), [permissions]);
+
   return (
-    <Ctx.Provider
-      value={{
-        user,
-        login: (email) =>
-          persist({
-            name: email.split("@")[0] || "Admin User",
-            email,
-            role: "System Administrator",
-          }),
-        logout: () => persist(null),
-        setRole: (role) => user && persist({ ...user, role }),
-      }}
-    >
-      {children}
-    </Ctx.Provider>
+    <Ctx.Provider value={{
+      user,
+      permissions: permissionSlugs,
+      isRestoring,
+      login: async (identifier, password) => {
+        const session = await authApi.login(identifier, password);
+        if (!session.user.is_active || !session.permissions.some((permission) => permission.is_active)) {
+          clearStoredSession();
+          throw new Error("This account does not have access to the administrative portal.");
+        }
+        applyAccess(session.user, session.permissions);
+        return session.user;
+      },
+      logout: async () => {
+        const session = getStoredSession();
+        try { if (session) await authApi.logout(session.refresh_token); } finally { clearStoredSession(); setUser(null); setPermissions([]); }
+      },
+      refreshAccess,
+      can: (...required) => required.every((permission) => permissionSlugs.has(permission)),
+    }}>{children}</Ctx.Provider>
   );
 }
 
 export const useAuth = () => {
-  const c = useContext(Ctx);
-  if (!c) throw new Error("useAuth outside provider");
-  return c;
+  const context = useContext(Ctx);
+  if (!context) throw new Error("useAuth must be used inside AuthProvider.");
+  return context;
 };

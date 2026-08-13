@@ -1,63 +1,33 @@
-import type { Role } from "./auth";
 import {
-  LayoutDashboard, Users, UserCog, Sparkles, CalendarDays, ClipboardList,
-  CreditCard, Wallet, LifeBuoy, Bell, Settings, ShieldCheck, BarChart3,
-  MapPin, History, FileText,
+  LayoutDashboard, Users, UserCog, UserRound, Sparkles, CalendarDays, ClipboardList,
+  CreditCard, Wallet, LifeBuoy, Bell, Settings, ShieldCheck, BarChart3, MapPin, Package,
 } from "lucide-react";
 
-export interface NavItem {
-  to: string;
-  label: string;
-  icon: any;
-  roles: Role[];
-  section: string;
-}
-
-const ALL_STAFF: Role[] = [
-  "System Administrator", "Operations Manager", "Dispatcher",
-  "Customer Support Officer", "Finance Officer", "Reporting Analyst",
-];
+export interface NavItem { to: string; label: string; icon: typeof LayoutDashboard; permissions: string[]; section: string; }
 
 export const NAV: NavItem[] = [
-  // Overview
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ALL_STAFF, section: "Overview" },
-  { to: "/analytics", label: "Analytics", icon: BarChart3, roles: ["System Administrator", "Operations Manager", "Reporting Analyst"], section: "Overview" },
-
-  // Users
-  { to: "/customers", label: "Customers", icon: Users, roles: ["System Administrator", "Operations Manager", "Customer Support Officer"], section: "Users" },
-  { to: "/staff", label: "Staff & Roles", icon: UserCog, roles: ["System Administrator"], section: "Users" },
-  { to: "/audit", label: "Audit Logs", icon: ShieldCheck, roles: ["System Administrator"], section: "Users" },
-
-  // Cleaners
-  { to: "/cleaners", label: "Cleaner Profiles", icon: Sparkles, roles: ["System Administrator", "Operations Manager", "Dispatcher"], section: "Cleaners" },
-  { to: "/availability", label: "Availability & Zones", icon: MapPin, roles: ["System Administrator", "Operations Manager", "Dispatcher"], section: "Cleaners" },
-
-  // Bookings
-  { to: "/bookings", label: "All Bookings", icon: ClipboardList, roles: ["System Administrator", "Operations Manager", "Dispatcher", "Customer Support Officer"], section: "Bookings" },
-  { to: "/dispatch", label: "Dispatch Calendar", icon: CalendarDays, roles: ["System Administrator", "Operations Manager", "Dispatcher"], section: "Bookings" },
-
-  // Financials
-  { to: "/payments", label: "Customer Payments", icon: CreditCard, roles: ["System Administrator", "Finance Officer", "Customer Support Officer"], section: "Financials" },
-  { to: "/payouts", label: "Cleaner Payouts", icon: Wallet, roles: ["System Administrator", "Finance Officer"], section: "Financials" },
-
-  // Support
-  { to: "/tickets", label: "Support Tickets", icon: LifeBuoy, roles: ["System Administrator", "Operations Manager", "Customer Support Officer"], section: "Support" },
-  { to: "/notifications", label: "Notifications Hub", icon: Bell, roles: ["System Administrator", "Operations Manager", "Customer Support Officer"], section: "Support" },
-
-  // System
-  { to: "/settings", label: "System Config", icon: Settings, roles: ["System Administrator"], section: "System" },
-
-  // Cleaner portal
-  { to: "/portal/cleaner/schedule", label: "My Schedule", icon: CalendarDays, roles: ["Cleaner"], section: "My Portal" },
-  { to: "/portal/cleaner/jobs", label: "Job History", icon: History, roles: ["Cleaner"], section: "My Portal" },
-  { to: "/portal/cleaner/earnings", label: "Earnings & Ratings", icon: Wallet, roles: ["Cleaner"], section: "My Portal" },
-
-  // Customer portal
-  { to: "/portal/customer/bookings", label: "My Bookings", icon: ClipboardList, roles: ["Customer"], section: "My Portal" },
-  { to: "/portal/customer/invoices", label: "Invoices", icon: FileText, roles: ["Customer"], section: "My Portal" },
-  { to: "/portal/customer/profile", label: "Profile & Addresses", icon: UserCog, roles: ["Customer"], section: "My Portal" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permissions: ["dashboards.read"], section: "Overview" },
+  { to: "/profile", label: "My Profile", icon: UserRound, permissions: [], section: "Account" },
+  { to: "/customers", label: "Clients", icon: Users, permissions: ["users.read"], section: "Administration" },
+  { to: "/staff", label: "Staff", icon: UserCog, permissions: ["users.read"], section: "Administration" },
+  { to: "/roles", label: "Roles", icon: ShieldCheck, permissions: ["roles.read"], section: "Administration" },
+  { to: "/audit", label: "Audit & OTP Logs", icon: ShieldCheck, permissions: ["audit_logs.read"], section: "Administration" },
+  { to: "/cleaners", label: "Cleaner Profiles", icon: Sparkles, permissions: ["users.read"], section: "Users" },
+  { to: "/availability", label: "Availability & Zones", icon: MapPin, permissions: [], section: "Operations" },
+  { to: "/bookings", label: "All Bookings", icon: ClipboardList, permissions: [], section: "Operations" },
+  { to: "/dispatch", label: "Dispatch Calendar", icon: CalendarDays, permissions: [], section: "Operations" },
+  { to: "/services", label: "Services", icon: Package, permissions: [], section: "Operations" },
+  { to: "/subscriptions", label: "Subscriptions", icon: CalendarDays, permissions: [], section: "Operations" },
+  { to: "/payments", label: "Customer Payments", icon: CreditCard, permissions: [], section: "Financials" },
+  { to: "/payouts", label: "Cleaner Payouts", icon: Wallet, permissions: [], section: "Financials" },
+  { to: "/analytics", label: "Analytics", icon: BarChart3, permissions: [], section: "Insights" },
+  { to: "/tickets", label: "Support Tickets", icon: LifeBuoy, permissions: [], section: "Support" },
+  { to: "/notifications", label: "Notifications Hub", icon: Bell, permissions: [], section: "Support" },
+  { to: "/settings", label: "System Config", icon: Settings, permissions: ["roles.read"], section: "System" },
 ];
 
-export function navFor(role: Role) {
-  return NAV.filter((n) => n.roles.includes(role));
+export function navFor(permissions: Set<string>) { return NAV.filter((item) => item.permissions.every((permission) => permissions.has(permission))); }
+export function canVisit(path: string, permissions: Set<string>) {
+  const item = NAV.find((candidate) => candidate.to === path);
+  return !item || item.permissions.every((permission) => permissions.has(permission));
 }

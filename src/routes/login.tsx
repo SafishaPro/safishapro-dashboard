@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { authApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,8 +16,12 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@safisha.pro");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -25,14 +30,31 @@ function LoginPage() {
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
             <h2 className="text-2xl font-semibold">Sign in</h2>
-            <p className="text-sm text-muted-foreground mt-1">Use any email + password (demo). Role is switchable after login.</p>
+            <p className="text-sm text-muted-foreground mt-1">Sign in with your SafishaPro staff account.</p>
           </div>
-          <form
+          {showReset ? <form className="space-y-4" onSubmit={async (event) => {
+            event.preventDefault(); setError(null); setResetMessage(null); setIsSubmitting(true);
+            try { await authApi.requestPasswordReset(email); setResetMessage("If this email is registered, password-reset instructions have been sent."); }
+            catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to request a reset."); }
+            finally { setIsSubmitting(false); }
+          }}>
+            <div className="space-y-2"><Label htmlFor="reset-email">Staff email</Label><Input id="reset-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            {resetMessage && <p className="text-sm text-muted-foreground">{resetMessage}</p>}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? "Sending…" : "Request password reset"}</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowReset(false); setError(null); }}>Back to sign in</Button>
+          </form> : <form
             className="space-y-4"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              login(email, password);
-              navigate({ to: "/dashboard" });
+              setError(null);
+              setIsSubmitting(true);
+              try {
+                await login(email, password);
+                navigate({ to: "/dashboard" });
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : "Unable to sign in.");
+              } finally { setIsSubmitting(false); }
             }}
           >
             <div className="space-y-2">
@@ -43,8 +65,10 @@ function LoginPage() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <Button type="submit" className="w-full">Sign in</Button>
-          </form>
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? "Signing in…" : "Sign in"}</Button>
+            <Button type="button" variant="link" className="w-full" onClick={() => { setShowReset(true); setError(null); }}>Forgot your password?</Button>
+          </form>}
         </Card>
       </div>
     </div>
