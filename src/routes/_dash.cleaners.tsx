@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { History, MapPin } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { CalendarDays, MapPin, Plus, Power, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,12 +8,784 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { usersApi, type AdminUserDetails, type ApiUser, type UserActivity } from "@/lib/api";
+import { cleanersApi } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash/cleaners")({ component: CleanersPage });
-function CleanersPage() { const { can } = useAuth(); const [cleaners, setCleaners] = useState<ApiUser[]>([]); const [selected, setSelected] = useState<ApiUser | null>(null); const [details, setDetails] = useState<AdminUserDetails | null>(null); const [activity, setActivity] = useState<UserActivity | null>(null); const [editing, setEditing] = useState(false); const [error, setError] = useState<string | null>(null); const load = async () => { try { setCleaners(await usersApi.list("cleaner")); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load cleaners."); } }; useEffect(() => { load(); }, []); const view = async (user: ApiUser) => { setSelected(user); setDetails(null); setActivity(null); setEditing(false); try { setDetails(await usersApi.get(user.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load cleaner details."); } }; const update = async (event: React.FormEvent) => { event.preventDefault(); if (!selected) return; try { await usersApi.update(selected.id, { full_name: selected.full_name, email: selected.email ?? undefined, phone: selected.phone ?? undefined, city: selected.city ?? undefined }); setEditing(false); await view(selected); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update cleaner."); } }; const changeStatus = async () => { if (!selected) return; try { if (selected.is_active) await usersApi.suspend(selected.id); else await usersApi.reactivate(selected.id); await view(selected); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update cleaner status."); } }; const activityFor = async () => { if (!selected) return; try { setActivity(await usersApi.activity(selected.id)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load activity."); } }; return <div className="space-y-6"><PageHeader title="Cleaner profiles" description="View and manage cleaner profiles, status, location and activity." actions={<Button variant="outline" onClick={load}>Refresh</Button>} />{error && <p className="text-sm text-destructive">{error}</p>}<Card className="p-4"><Table><TableHeader><TableRow><TableHead>Cleaner</TableHead><TableHead>Contact</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{cleaners.map((user) => <TableRow key={user.id}><TableCell><div className="font-medium">{user.full_name}</div><div className="text-xs text-muted-foreground">{user.city || "Location not provided"}</div></TableCell><TableCell>{user.email || user.phone || "—"}</TableCell><TableCell><Badge variant={user.is_active ? "success" : "destructive"}>{user.is_active ? "Active" : "Inactive"}</Badge></TableCell><TableCell className="text-right"><Button size="sm" className="bg-blue-950 text-white hover:bg-blue-900" onClick={() => view(user)}>View details</Button></TableCell></TableRow>)}</TableBody></Table></Card><Dialog open={Boolean(selected)} onOpenChange={(visible) => !visible && setSelected(null)}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Cleaner details</DialogTitle></DialogHeader>{selected && (editing ? <form className="grid gap-4 sm:grid-cols-2" onSubmit={update}><Field label="Full name"><Input value={selected.full_name} onChange={(e) => setSelected({ ...selected, full_name: e.target.value })} /></Field><Field label="Email"><Input value={selected.email ?? ""} onChange={(e) => setSelected({ ...selected, email: e.target.value })} /></Field><Field label="Phone"><Input value={selected.phone ?? ""} onChange={(e) => setSelected({ ...selected, phone: e.target.value })} /></Field><Field label="City"><Input value={selected.city ?? ""} onChange={(e) => setSelected({ ...selected, city: e.target.value })} /></Field><div className="sm:col-span-2 flex gap-2"><Button disabled={!can("users.update")}>Save changes</Button><Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancel</Button></div></form> : <CleanerDetails user={details?.user ?? selected} details={details} activity={activity} />)}{selected && !editing && <div className="flex flex-wrap gap-2 border-t pt-4"><Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={!can("users.update")} onClick={() => setEditing(true)}>Edit cleaner</Button><Button variant="outline" disabled={!can("users.suspend", "users.reactivate")} onClick={changeStatus}>{selected.is_active ? "Suspend cleaner" : "Reactivate cleaner"}</Button><Button variant="outline" disabled={!can("audit_logs.read")} onClick={activityFor}><History />View activity</Button></div>}</DialogContent></Dialog></div>; }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><Label>{label}</Label><div className="mt-1">{children}</div></div>; }
-function CleanerDetails({ user, details, activity }: { user: ApiUser; details: AdminUserDetails | null; activity: UserActivity | null }) { const address = [user.address_description, user.city].filter(Boolean).join(", "); return <div className="space-y-4"><div className="grid grid-cols-2 gap-3 text-sm">{[["Full name", user.full_name], ["Email", user.email], ["Phone", user.phone], ["Status", user.is_active ? "Active" : "Inactive"], ["Last login", user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—"]].map(([label, value]) => <div key={String(label)}><p className="text-xs text-muted-foreground">{label}</p><p className="font-medium">{value || "—"}</p></div>)}</div><div className="rounded-lg border p-3"><p className="flex gap-2 text-sm font-medium"><MapPin className="h-4 w-4 text-blue-900" />Location</p><p className="text-sm text-muted-foreground">{address || "Address not provided"}</p>{user.residency_latitude !== null && user.residency_longitude !== null && <a className="mt-2 inline-block text-sm text-blue-900 underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${user.residency_latitude},${user.residency_longitude}`}>View on map</a>}</div>{details && <div className="grid grid-cols-2 gap-2 text-sm"><Count label="Active bookings" value={details.active_bookings.length} /><Count label="Past bookings" value={details.past_bookings.length} /><Count label="Active subscriptions" value={details.active_subscriptions.length} /><Count label="Past subscriptions" value={details.past_subscriptions.length} /></div>}{activity && <div className="max-h-40 divide-y overflow-y-auto rounded-md border">{activity.events.length ? activity.events.map((event) => <div key={event.id} className="p-2 text-sm">{event.action}<span className="ml-2 text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</span></div>) : <p className="p-2 text-sm text-muted-foreground">No recorded activity.</p>}</div>}</div>; }
-function Count({ label, value }: { label: string; value: number }) { return <div className="rounded bg-muted p-2"><p className="text-muted-foreground">{label}</p><p className="font-semibold">{value}</p></div>; }
+
+type Cleaner = {
+  id: string;
+  full_name: string;
+  email?: string | null;
+  phone: string;
+  national_id: string;
+  service_area: string;
+  skills: string[];
+  status: "active" | "inactive" | "suspended";
+  is_available: boolean;
+  current_latitude: number | null;
+  current_longitude: number | null;
+  rating: string | number | null;
+  notes: string | null;
+  created_at?: string;
+  stats?: Record<string, number | string>;
+  recent_reviews?: Array<{ rating: number; review: string | null; created_at: string }>;
+};
+type Shift = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  service_area: string | null;
+  notes: string | null;
+  is_active: boolean;
+};
+type CleanerForm = {
+  full_name: string;
+  phone: string;
+  national_id: string;
+  service_area: string;
+  skills: string;
+  status: Cleaner["status"];
+  is_available: boolean;
+  current_latitude: string;
+  current_longitude: string;
+  notes: string;
+};
+const blankForm: CleanerForm = {
+  full_name: "",
+  phone: "",
+  national_id: "",
+  service_area: "",
+  skills: "",
+  status: "active",
+  is_available: true,
+  current_latitude: "",
+  current_longitude: "",
+  notes: "",
+};
+const toForm = (cleaner: Cleaner): CleanerForm => ({
+  full_name: cleaner.full_name,
+  phone: cleaner.phone,
+  national_id: cleaner.national_id,
+  service_area: cleaner.service_area,
+  skills: cleaner.skills.join(", "),
+  status: cleaner.status,
+  is_available: cleaner.is_available,
+  current_latitude: cleaner.current_latitude?.toString() ?? "",
+  current_longitude: cleaner.current_longitude?.toString() ?? "",
+  notes: cleaner.notes ?? "",
+});
+const dateInput = (date: Date) => date.toISOString().slice(0, 16);
+const shiftsWindow = () => ({
+  starts_at: new Date(Date.now() - 7 * 86_400_000).toISOString(),
+  ends_at: new Date(Date.now() + 28 * 86_400_000).toISOString(),
+});
+
+function formPayload(form: CleanerForm) {
+  if (Boolean(form.current_latitude) !== Boolean(form.current_longitude))
+    throw new Error("Enter both latitude and longitude, or leave both empty.");
+  return {
+    full_name: form.full_name,
+    phone: form.phone,
+    national_id: form.national_id,
+    service_area: form.service_area,
+    skills: form.skills
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter(Boolean),
+    status: form.status,
+    is_available: form.is_available,
+    ...(form.current_latitude
+      ? {
+          current_latitude: Number(form.current_latitude),
+          current_longitude: Number(form.current_longitude),
+        }
+      : {}),
+    notes: form.notes || undefined,
+  };
+}
+
+function CleanersPage() {
+  const { can } = useAuth();
+  const [cleaners, setCleaners] = useState<Cleaner[]>([]);
+  const [selected, setSelected] = useState<Cleaner | null>(null);
+  const [form, setForm] = useState<CleanerForm>(blankForm);
+  const [mode, setMode] = useState<"create" | "edit" | "availability" | "shifts" | null>(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [availability, setAvailability] = useState("all");
+  const [serviceArea, setServiceArea] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [shiftForm, setShiftForm] = useState({
+    starts_at: dateInput(new Date()),
+    ends_at: dateInput(new Date(Date.now() + 8 * 3_600_000)),
+    service_area: "",
+    notes: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setError(null);
+      const data = await cleanersApi.list({
+        ...(status !== "all" ? { status } : {}),
+        ...(availability !== "all" ? { is_available: availability === "available" } : {}),
+        ...(serviceArea ? { service_area: serviceArea } : {}),
+        ...(search.trim().length >= 2 ? { search: search.trim() } : {}),
+      });
+      setCleaners(data as Cleaner[]);
+      setPage(1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to load cleaners.");
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const view = async (cleaner: Cleaner) => {
+    try {
+      setError(null);
+      const data = (await cleanersApi.get(cleaner.id)) as Cleaner;
+      setSelected(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to load this cleaner profile.");
+    }
+  };
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      const payload = formPayload(form);
+      if (mode === "create") await cleanersApi.create(payload);
+      else if (selected) await cleanersApi.update(selected.id, payload);
+      setMode(null);
+      setSelected(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save cleaner.");
+    }
+  };
+  const saveAvailability = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    try {
+      if (Boolean(form.current_latitude) !== Boolean(form.current_longitude))
+        throw new Error("Enter both latitude and longitude, or leave both empty.");
+      await cleanersApi.availability(selected.id, {
+        is_available: form.is_available,
+        ...(form.current_latitude
+          ? {
+              current_latitude: Number(form.current_latitude),
+              current_longitude: Number(form.current_longitude),
+            }
+          : {}),
+      });
+      await view(selected);
+      await load();
+      setMode(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update availability.");
+    }
+  };
+  const loadShifts = async (cleaner: Cleaner) => {
+    try {
+      setError(null);
+      setSelected(cleaner);
+      const data = await cleanersApi.shifts({ ...shiftsWindow(), cleaner_id: cleaner.id });
+      setShifts(data as Shift[]);
+      setShiftForm((current) => ({ ...current, service_area: cleaner.service_area }));
+      setMode("shifts");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to load cleaner shifts.");
+    }
+  };
+  const createShift = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    try {
+      await cleanersApi.createShift({
+        cleaner_id: selected.id,
+        starts_at: new Date(shiftForm.starts_at).toISOString(),
+        ends_at: new Date(shiftForm.ends_at).toISOString(),
+        service_area: shiftForm.service_area || undefined,
+        notes: shiftForm.notes || undefined,
+      });
+      await loadShifts(selected);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create shift.");
+    }
+  };
+  const deactivate = async (cleaner: Cleaner) => {
+    if (!window.confirm(`Deactivate ${cleaner.full_name}? Their history will be kept.`)) return;
+    try {
+      await cleanersApi.deactivate(cleaner.id);
+      setSelected(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to deactivate cleaner.");
+    }
+  };
+  const reactivate = async (cleaner: Cleaner) => {
+    try {
+      await cleanersApi.update(cleaner.id, { status: "active", is_available: true });
+      await view(cleaner);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to reactivate cleaner.");
+    }
+  };
+
+  const openCreate = () => {
+    setSelected(null);
+    setForm(blankForm);
+    setMode("create");
+  };
+  const openEdit = (cleaner: Cleaner) => {
+    setForm(toForm(cleaner));
+    setMode("edit");
+  };
+  const openAvailability = (cleaner: Cleaner) => {
+    setForm(toForm(cleaner));
+    setMode("availability");
+  };
+  const totalPages = Math.max(1, Math.ceil(cleaners.length / pageSize));
+  const visibleCleaners = cleaners.slice((page - 1) * pageSize, page * pageSize);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Cleaner profiles"
+        description="Create, manage, and dispatch cleaner availability and schedules."
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void load()}>
+              <RefreshCw className="mr-2 size-4" />
+              Refresh
+            </Button>
+            {can("cleaners.create") && (
+              <Button onClick={openCreate}>
+                <Plus className="mr-2 size-4" />
+                Add cleaner
+              </Button>
+            )}
+          </div>
+        }
+      />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Card className="p-4">
+        <div className="mb-4 flex flex-wrap gap-3">
+          <Input
+            className="max-w-sm"
+            placeholder="Search name, phone, or national ID"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Input
+            className="w-44"
+            placeholder="Service area"
+            value={serviceArea}
+            onChange={(event) => setServiceArea(event.target.value)}
+          />
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={availability} onValueChange={setAvailability}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All availability</SelectItem>
+              <SelectItem value="available">Available now</SelectItem>
+              <SelectItem value="unavailable">Unavailable</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={() => void load()}>Apply filters</Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-14">#</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleCleaners.map((cleaner, index) => (
+              <TableRow key={cleaner.id}>
+                <TableCell className="font-mono text-xs text-muted-foreground">{String((page - 1) * pageSize + index + 1).padStart(2, "0")}</TableCell>
+                <TableCell className="font-medium">{cleaner.full_name}</TableCell>
+                <TableCell>{cleaner.email ?? "—"}</TableCell>
+                <TableCell>{cleaner.phone}</TableCell>
+                <TableCell>{cleaner.service_area || "—"}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant={cleaner.status === "active" ? "success" : "secondary"}>
+                      {cleaner.status}
+                    </Badge>
+                    <Badge variant={cleaner.is_available ? "outline" : "secondary"}>
+                      {cleaner.is_available ? "Available" : "Unavailable"}
+                    </Badge>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    className="bg-blue-950 text-white hover:bg-blue-900"
+                    onClick={() => void view(cleaner)}
+                  >
+                    View profile
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!cleaners.length && (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
+                  No cleaner profiles found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+        {cleaners.length > 0 && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm"><p className="text-muted-foreground">Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, cleaners.length)} of {cleaners.length} cleaners</p><div className="flex items-center gap-2"><Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}><SelectTrigger className="w-28"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="10">10 per page</SelectItem><SelectItem value="20">20 per page</SelectItem><SelectItem value="50">50 per page</SelectItem></SelectContent></Select><Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="text-muted-foreground">Page {page} of {totalPages}</span><Button size="sm" variant="outline" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next</Button></div></div>}
+      </Card>
+      <Dialog
+        open={mode !== null}
+        onOpenChange={(open) => {
+          if (!open) setMode(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {mode === "create"
+                ? "Add cleaner"
+                : mode === "edit"
+                  ? "Edit cleaner"
+                  : mode === "availability"
+                    ? "Live availability"
+                    : mode === "shifts"
+                      ? "Cleaner shifts"
+                      : "Cleaner profile"}
+            </DialogTitle>
+          </DialogHeader>
+          {mode === "create" || mode === "edit" ? (
+            <CleanerForm
+              form={form}
+              setForm={setForm}
+              onSubmit={save}
+              submitLabel={mode === "create" ? "Create cleaner" : "Save changes"}
+            />
+          ) : mode === "availability" ? (
+            <AvailabilityForm form={form} setForm={setForm} onSubmit={saveAvailability} />
+          ) : mode === "shifts" && selected ? (
+            <ShiftManager
+              shifts={shifts}
+              form={shiftForm}
+              setForm={setShiftForm}
+              canCreate={can("schedules.create")}
+              canDelete={can("schedules.delete")}
+              onSubmit={createShift}
+              onDeactivate={async (shift) => {
+                try {
+                  await cleanersApi.deactivateShift(shift.id);
+                  await loadShifts(selected);
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : "Unable to deactivate shift.");
+                }
+              }}
+            />
+          ) : selected ? (
+            <CleanerProfile
+              cleaner={selected}
+              can={can}
+              onEdit={() => openEdit(selected)}
+              onAvailability={() => openAvailability(selected)}
+              onShifts={() => void loadShifts(selected)}
+              onDeactivate={() => void deactivate(selected)}
+              onReactivate={() => void reactivate(selected)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CleanerForm({
+  form,
+  setForm,
+  onSubmit,
+  submitLabel,
+}: {
+  form: CleanerForm;
+  setForm: (form: CleanerForm) => void;
+  onSubmit: (event: FormEvent) => void;
+  submitLabel: string;
+}) {
+  return (
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
+      <Field label="Full name">
+        <Input
+          value={form.full_name}
+          onChange={(event) => setForm({ ...form, full_name: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label="Phone">
+        <Input
+          value={form.phone}
+          onChange={(event) => setForm({ ...form, phone: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label="National ID">
+        <Input
+          value={form.national_id}
+          onChange={(event) => setForm({ ...form, national_id: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label="Service area">
+        <Input
+          value={form.service_area}
+          onChange={(event) => setForm({ ...form, service_area: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label="Skills">
+        <Input
+          value={form.skills}
+          onChange={(event) => setForm({ ...form, skills: event.target.value })}
+          placeholder="House cleaning, deep cleaning"
+        />
+      </Field>
+      <Field label="Status">
+        <Select
+          value={form.status}
+          onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+            <SelectItem value="suspended">Suspended</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label="Latitude">
+        <Input
+          type="number"
+          step="any"
+          value={form.current_latitude}
+          onChange={(event) => setForm({ ...form, current_latitude: event.target.value })}
+        />
+      </Field>
+      <Field label="Longitude">
+        <Input
+          type="number"
+          step="any"
+          value={form.current_longitude}
+          onChange={(event) => setForm({ ...form, current_longitude: event.target.value })}
+        />
+      </Field>
+      <div className="sm:col-span-2">
+        <Field label="Notes">
+          <Input
+            value={form.notes}
+            onChange={(event) => setForm({ ...form, notes: event.target.value })}
+          />
+        </Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={form.is_available}
+          onChange={(event) => setForm({ ...form, is_available: event.target.checked })}
+        />
+        Available for assignment
+      </label>
+      <div className="flex items-end justify-end">
+        <Button>{submitLabel}</Button>
+      </div>
+    </form>
+  );
+}
+function AvailabilityForm({
+  form,
+  setForm,
+  onSubmit,
+}: {
+  form: CleanerForm;
+  setForm: (form: CleanerForm) => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form className="space-y-4" onSubmit={onSubmit}>
+      <p className="text-sm text-muted-foreground">
+        Use this for current duty status and live location. Location coordinates must be entered
+        together.
+      </p>
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input
+          type="checkbox"
+          checked={form.is_available}
+          onChange={(event) => setForm({ ...form, is_available: event.target.checked })}
+        />
+        Available for assignment
+      </label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Latitude">
+          <Input
+            type="number"
+            step="any"
+            value={form.current_latitude}
+            onChange={(event) => setForm({ ...form, current_latitude: event.target.value })}
+          />
+        </Field>
+        <Field label="Longitude">
+          <Input
+            type="number"
+            step="any"
+            value={form.current_longitude}
+            onChange={(event) => setForm({ ...form, current_longitude: event.target.value })}
+          />
+        </Field>
+      </div>
+      <Button>Update availability</Button>
+    </form>
+  );
+}
+function CleanerProfile({
+  cleaner,
+  can,
+  onEdit,
+  onAvailability,
+  onShifts,
+  onDeactivate,
+  onReactivate,
+}: {
+  cleaner: Cleaner;
+  can: (...permissions: string[]) => boolean;
+  onEdit: () => void;
+  onAvailability: () => void;
+  onShifts: () => void;
+  onDeactivate: () => void;
+  onReactivate: () => void;
+}) {
+  const stats = cleaner.stats ?? {};
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {[
+          ["Phone", cleaner.phone],
+          ["National ID", cleaner.national_id],
+          ["Service area", cleaner.service_area],
+          ["Rating", cleaner.rating ?? "—"],
+          ["Status", cleaner.status],
+          ["Availability", cleaner.is_available ? "Available" : "Unavailable"],
+        ].map(([label, value]) => (
+          <div key={String(label)}>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="font-medium">{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="rounded-lg border p-3">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <MapPin className="size-4 text-blue-900" />
+          Live location
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {cleaner.current_latitude != null && cleaner.current_longitude != null
+            ? `${cleaner.current_latitude}, ${cleaner.current_longitude}`
+            : "Location not provided"}
+        </p>
+      </div>
+      {Object.keys(stats).length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {Object.entries(stats).map(([label, value]) => (
+            <div key={label} className="rounded-md bg-muted p-3">
+              <p className="text-xs text-muted-foreground">{label.replaceAll("_", " ")}</p>
+              <p className="mt-1 font-semibold">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {cleaner.recent_reviews?.length ? (
+        <div>
+          <h3 className="mb-2 font-medium">Recent reviews</h3>
+          <div className="space-y-2">
+            {cleaner.recent_reviews.map((review, index) => (
+              <div key={`${review.created_at}-${index}`} className="rounded-md border p-3 text-sm">
+                <p className="font-medium">{review.rating}/5</p>
+                <p className="text-muted-foreground">{review.review || "No written review"}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-2 border-t pt-4">
+        {can("cleaners.update") && <Button onClick={onEdit}>Edit profile</Button>}
+        {can("cleaner_availability.update") && (
+          <Button variant="outline" onClick={onAvailability}>
+            <Power className="mr-2 size-4" />
+            Availability
+          </Button>
+        )}
+        {can("schedules.read") && (
+          <Button variant="outline" onClick={onShifts}>
+            <CalendarDays className="mr-2 size-4" />
+            Shifts
+          </Button>
+        )}
+        {cleaner.status === "inactive"
+          ? can("cleaners.update") && (
+              <Button variant="outline" onClick={onReactivate}>
+                Reactivate
+              </Button>
+            )
+          : can("cleaners.delete") && (
+              <Button variant="destructive" onClick={onDeactivate}>
+                Deactivate
+              </Button>
+            )}
+      </div>
+    </div>
+  );
+}
+function ShiftManager({
+  shifts,
+  form,
+  setForm,
+  canCreate,
+  canDelete,
+  onSubmit,
+  onDeactivate,
+}: {
+  shifts: Shift[];
+  form: { starts_at: string; ends_at: string; service_area: string; notes: string };
+  setForm: (form: {
+    starts_at: string;
+    ends_at: string;
+    service_area: string;
+    notes: string;
+  }) => void;
+  canCreate: boolean;
+  canDelete: boolean;
+  onSubmit: (event: FormEvent) => void;
+  onDeactivate: (shift: Shift) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {canCreate && (
+        <form className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2" onSubmit={onSubmit}>
+          <Field label="Starts">
+            <Input
+              type="datetime-local"
+              value={form.starts_at}
+              onChange={(event) => setForm({ ...form, starts_at: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Ends">
+            <Input
+              type="datetime-local"
+              value={form.ends_at}
+              onChange={(event) => setForm({ ...form, ends_at: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Service area">
+            <Input
+              value={form.service_area}
+              onChange={(event) => setForm({ ...form, service_area: event.target.value })}
+            />
+          </Field>
+          <Field label="Notes">
+            <Input
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Button>Add shift</Button>
+          </div>
+        </form>
+      )}
+      <div className="space-y-2">
+        {shifts.length ? (
+          shifts.map((shift) => (
+            <div
+              key={shift.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+            >
+              <div>
+                <p className="font-medium">
+                  {new Date(shift.starts_at).toLocaleString()} -{" "}
+                  {new Date(shift.ends_at).toLocaleString()}
+                </p>
+                <p className="text-muted-foreground">
+                  {[shift.service_area, shift.notes].filter(Boolean).join(" · ") || "No notes"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={shift.is_active ? "success" : "secondary"}>
+                  {shift.is_active ? "Active" : "Inactive"}
+                </Badge>
+                {canDelete && shift.is_active && (
+                  <Button size="sm" variant="destructive" onClick={() => onDeactivate(shift)}>
+                    Deactivate
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No shifts in the current five-week window.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}

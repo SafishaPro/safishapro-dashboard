@@ -18,7 +18,7 @@ function DashLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  const items = useMemo(() => (user ? navFor(permissions) : []), [user, permissions]);
+  const items = useMemo(() => (user ? navFor(permissions, user.role.slug) : []), [user, permissions]);
   const sections = useMemo(() => {
     const map = new Map<string, typeof items>();
     items.forEach((i) => {
@@ -30,7 +30,7 @@ function DashLayout() {
 
   if (isRestoring) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (!canVisit(pathname, permissions)) return <Navigate to="/dashboard" replace />;
+  if (!canVisit(pathname, permissions, user.role.slug)) return <Navigate to={items[0]?.to ?? "/profile"} replace />;
 
   const initials = user.full_name.slice(0, 2).toUpperCase();
 

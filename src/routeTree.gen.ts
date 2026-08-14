@@ -24,6 +24,7 @@ import { Route as DashNotificationsRouteImport } from './routes/_dash.notificati
 import { Route as DashPaymentsRouteImport } from './routes/_dash.payments'
 import { Route as DashPayoutsRouteImport } from './routes/_dash.payouts'
 import { Route as DashProfileRouteImport } from './routes/_dash.profile'
+import { Route as DashPropertyTypesRouteImport } from './routes/_dash.property-types'
 import { Route as DashRolesRouteImport } from './routes/_dash.roles'
 import { Route as DashServicesRouteImport } from './routes/_dash.services'
 import { Route as DashSettingsRouteImport } from './routes/_dash.settings'
@@ -111,6 +112,11 @@ const DashProfileRoute = DashProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => DashRoute,
 } as any)
+const DashPropertyTypesRoute = DashPropertyTypesRouteImport.update({
+  id: '/property-types',
+  path: '/property-types',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashRolesRoute = DashRolesRouteImport.update({
   id: '/roles',
   path: '/roles',
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/payments': typeof DashPaymentsRoute
   '/payouts': typeof DashPayoutsRoute
   '/profile': typeof DashProfileRoute
+  '/property-types': typeof DashPropertyTypesRoute
   '/roles': typeof DashRolesRoute
   '/services': typeof DashServicesRoute
   '/settings': typeof DashSettingsRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/payments': typeof DashPaymentsRoute
   '/payouts': typeof DashPayoutsRoute
   '/profile': typeof DashProfileRoute
+  '/property-types': typeof DashPropertyTypesRoute
   '/roles': typeof DashRolesRoute
   '/services': typeof DashServicesRoute
   '/settings': typeof DashSettingsRoute
@@ -250,6 +258,7 @@ export interface FileRoutesById {
   '/_dash/payments': typeof DashPaymentsRoute
   '/_dash/payouts': typeof DashPayoutsRoute
   '/_dash/profile': typeof DashProfileRoute
+  '/_dash/property-types': typeof DashPropertyTypesRoute
   '/_dash/roles': typeof DashRolesRoute
   '/_dash/services': typeof DashServicesRoute
   '/_dash/settings': typeof DashSettingsRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/payments'
     | '/payouts'
     | '/profile'
+    | '/property-types'
     | '/roles'
     | '/services'
     | '/settings'
@@ -308,6 +318,7 @@ export interface FileRouteTypes {
     | '/payments'
     | '/payouts'
     | '/profile'
+    | '/property-types'
     | '/roles'
     | '/services'
     | '/settings'
@@ -337,6 +348,7 @@ export interface FileRouteTypes {
     | '/_dash/payments'
     | '/_dash/payouts'
     | '/_dash/profile'
+    | '/_dash/property-types'
     | '/_dash/roles'
     | '/_dash/services'
     | '/_dash/settings'
@@ -464,6 +476,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashProfileRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/property-types': {
+      id: '/_dash/property-types'
+      path: '/property-types'
+      fullPath: '/property-types'
+      preLoaderRoute: typeof DashPropertyTypesRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/roles': {
       id: '/_dash/roles'
       path: '/roles'
@@ -564,6 +583,7 @@ interface DashRouteChildren {
   DashPaymentsRoute: typeof DashPaymentsRoute
   DashPayoutsRoute: typeof DashPayoutsRoute
   DashProfileRoute: typeof DashProfileRoute
+  DashPropertyTypesRoute: typeof DashPropertyTypesRoute
   DashRolesRoute: typeof DashRolesRoute
   DashServicesRoute: typeof DashServicesRoute
   DashSettingsRoute: typeof DashSettingsRoute
@@ -591,6 +611,7 @@ const DashRouteChildren: DashRouteChildren = {
   DashPaymentsRoute: DashPaymentsRoute,
   DashPayoutsRoute: DashPayoutsRoute,
   DashProfileRoute: DashProfileRoute,
+  DashPropertyTypesRoute: DashPropertyTypesRoute,
   DashRolesRoute: DashRolesRoute,
   DashServicesRoute: DashServicesRoute,
   DashSettingsRoute: DashSettingsRoute,

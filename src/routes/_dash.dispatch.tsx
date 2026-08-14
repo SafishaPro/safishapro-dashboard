@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,14 +7,38 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { cleaners } from "@/lib/mock-data";
+import { useAuth } from "@/lib/auth";
+import { bookingsApi, cleanersApi, dispatchLiveUrl, type Booking } from "@/lib/api";
 import {
-  CalendarDays, ChevronLeft, ChevronRight, Columns3, GripVertical, LayoutGrid,
-  ListFilter, MapPin, Plus, Rows3, Search, Sparkles, Clock, User, Undo2, Zap,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  LayoutGrid,
+  ListFilter,
+  MapPin,
+  Rows3,
+  Search,
+  Sparkles,
+  Clock,
+  User,
+  Zap,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_dash/dispatch")({
@@ -22,9 +46,16 @@ export const Route = createFileRoute("/_dash/dispatch")({
   head: () => ({
     meta: [
       { title: "Dispatch Board · SafishaPro Operations" },
-      { name: "description", content: "Drag-and-drop dispatch board to assign cleaners to jobs across zones, timeline and status lanes." },
+      {
+        name: "description",
+        content:
+          "Drag-and-drop dispatch board to assign cleaners to jobs across zones, timeline and status lanes.",
+      },
       { property: "og:title", content: "Dispatch Board · SafishaPro Operations" },
-      { property: "og:description", content: "Assign cleaners to jobs across zones, timeline and status lanes." },
+      {
+        property: "og:description",
+        content: "Assign cleaners to jobs across zones, timeline and status lanes.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -49,16 +80,120 @@ type Job = {
 const HOURS = Array.from({ length: 11 }, (_, i) => 7 + i);
 const COL = 104;
 
-const INITIAL_JOBS: Job[] = [
-  { id: "BK-2401", service: "Deep Clean", customer: "Amina Yusuf", address: "Kilimani, Nairobi", zone: "Kilimani", start: 10, duration: 4, amount: 4500, priority: "Priority", status: "In Progress", cleanerId: "CL-01", notes: "Gate code 4471. Two dogs on site." },
-  { id: "BK-2403", service: "Move Out", customer: "Cynthia Mwangi", address: "Karen, Nairobi", zone: "Karen", start: 9, duration: 6, amount: 7200, priority: "VIP", status: "Assigned", cleanerId: "CL-03", notes: "Landlord inspection at 16:00." },
-  { id: "BK-2404", service: "Office Clean", customer: "David Kimani", address: "Westlands, Nairobi", zone: "Westlands", start: 8, duration: 5, amount: 12500, priority: "Standard", status: "Assigned", cleanerId: "CL-02", notes: "Access badge at reception." },
-  { id: "BK-2407", service: "Standard Clean", customer: "Ruth Wanjala", address: "Runda, Nairobi", zone: "Runda", start: 13, duration: 2, amount: 2800, priority: "Standard", status: "Assigned", cleanerId: "CL-05", notes: "" },
-  { id: "BK-2402", service: "Standard Clean", customer: "Brian Otieno", address: "Westlands, Nairobi", zone: "Westlands", start: 13, duration: 2, amount: 2800, priority: "Standard", status: "Unassigned", cleanerId: null, notes: "Customer prefers morning next time." },
-  { id: "BK-2406", service: "Deep Clean", customer: "Esther Njeri", address: "Lavington, Nairobi", zone: "Lavington", start: 11, duration: 4, amount: 4500, priority: "Priority", status: "Unassigned", cleanerId: null, notes: "Post-party clean, heavy kitchen." },
-  { id: "BK-2408", service: "Office Clean", customer: "Zawadi Ltd", address: "CBD, Nairobi", zone: "Nairobi CBD", start: 15, duration: 3, amount: 9800, priority: "VIP", status: "Unassigned", cleanerId: null, notes: "After hours only." },
-  { id: "BK-2409", service: "Standard Clean", customer: "Faith Kamau", address: "Kileleshwa, Nairobi", zone: "Kilimani", start: 9, duration: 2, amount: 2800, priority: "Standard", status: "Unassigned", cleanerId: null, notes: "" },
-];
+/*const INITIAL_JOBS: Job[] = [
+  {
+    id: "BK-2401",
+    service: "Deep Clean",
+    customer: "Amina Yusuf",
+    address: "Kilimani, Nairobi",
+    zone: "Kilimani",
+    start: 10,
+    duration: 4,
+    amount: 4500,
+    priority: "Priority",
+    status: "In Progress",
+    cleanerId: "CL-01",
+    notes: "Gate code 4471. Two dogs on site.",
+  },
+  {
+    id: "BK-2403",
+    service: "Move Out",
+    customer: "Cynthia Mwangi",
+    address: "Karen, Nairobi",
+    zone: "Karen",
+    start: 9,
+    duration: 6,
+    amount: 7200,
+    priority: "VIP",
+    status: "Assigned",
+    cleanerId: "CL-03",
+    notes: "Landlord inspection at 16:00.",
+  },
+  {
+    id: "BK-2404",
+    service: "Office Clean",
+    customer: "David Kimani",
+    address: "Westlands, Nairobi",
+    zone: "Westlands",
+    start: 8,
+    duration: 5,
+    amount: 12500,
+    priority: "Standard",
+    status: "Assigned",
+    cleanerId: "CL-02",
+    notes: "Access badge at reception.",
+  },
+  {
+    id: "BK-2407",
+    service: "Standard Clean",
+    customer: "Ruth Wanjala",
+    address: "Runda, Nairobi",
+    zone: "Runda",
+    start: 13,
+    duration: 2,
+    amount: 2800,
+    priority: "Standard",
+    status: "Assigned",
+    cleanerId: "CL-05",
+    notes: "",
+  },
+  {
+    id: "BK-2402",
+    service: "Standard Clean",
+    customer: "Brian Otieno",
+    address: "Westlands, Nairobi",
+    zone: "Westlands",
+    start: 13,
+    duration: 2,
+    amount: 2800,
+    priority: "Standard",
+    status: "Unassigned",
+    cleanerId: null,
+    notes: "Customer prefers morning next time.",
+  },
+  {
+    id: "BK-2406",
+    service: "Deep Clean",
+    customer: "Esther Njeri",
+    address: "Lavington, Nairobi",
+    zone: "Lavington",
+    start: 11,
+    duration: 4,
+    amount: 4500,
+    priority: "Priority",
+    status: "Unassigned",
+    cleanerId: null,
+    notes: "Post-party clean, heavy kitchen.",
+  },
+  {
+    id: "BK-2408",
+    service: "Office Clean",
+    customer: "Zawadi Ltd",
+    address: "CBD, Nairobi",
+    zone: "Nairobi CBD",
+    start: 15,
+    duration: 3,
+    amount: 9800,
+    priority: "VIP",
+    status: "Unassigned",
+    cleanerId: null,
+    notes: "After hours only.",
+  },
+  {
+    id: "BK-2409",
+    service: "Standard Clean",
+    customer: "Faith Kamau",
+    address: "Kileleshwa, Nairobi",
+    zone: "Kilimani",
+    start: 9,
+    duration: 2,
+    amount: 2800,
+    priority: "Standard",
+    status: "Unassigned",
+    cleanerId: null,
+    notes: "",
+  },
+];*/
 
 const priorityTone: Record<Job["priority"], string> = {
   Standard: "bg-muted text-muted-foreground",
@@ -74,19 +209,59 @@ const statusTone: Record<Job["status"], string> = {
 };
 
 function initials(name: string) {
-  return name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+  return name
+    .split(" ")
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function toJob(source: Record<string, unknown> | Booking): Job {
+  const item = source as Record<string, unknown>;
+  const scheduled = new Date(String(item.scheduled_for));
+  const status = String(item.status ?? "awaiting_assignment");
+  const cleaner = item.cleaner as Booking["cleaner"] | undefined;
+  const cleanerId = item.cleaner_id ? String(item.cleaner_id) : cleaner?.id ?? null;
+  return {
+    id: String(item.booking_id ?? item.id), service: String(item.service_name ?? "Service"),
+    customer: String(item.customer_name ?? item.customer_id ?? "Customer"),
+    address: [item.address_line, item.city].filter(Boolean).join(", ") || "Address not provided",
+    zone: String(item.city ?? "Unassigned"), start: scheduled.getHours(),
+    duration: Math.max(1, Math.ceil(Number(item.estimated_duration_minutes ?? 60) / 60)), amount: Number(item.quoted_price ?? 0),
+    priority: "Standard", status: cleanerId ? (status === "in_progress" ? "In Progress" : status === "completed" ? "Completed" : "Assigned") : "Unassigned",
+    cleanerId, notes: String(item.special_instructions ?? ""),
+  };
 }
 
 function DispatchPage() {
-  const [jobs, setJobs] = useState<Job[]>(INITIAL_JOBS);
+  const { can } = useAuth();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [cleaners, setCleaners] = useState<Array<{ id: string; name: string; zone: string; availability: string; rating?: string | number | null }>>([]);
   const [view, setView] = useState<"timeline" | "board" | "list">("timeline");
   const [query, setQuery] = useState("");
   const [zone, setZone] = useState("all");
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [hover, setHover] = useState<string | null>(null);
   const [selected, setSelected] = useState<Job | null>(null);
-  const [history, setHistory] = useState<Job[][]>([]);
+  const [matches, setMatches] = useState<Array<{ id: string; name: string; zone: string; availability: string; rating: string | number | null; distance?: number | null; workload?: number }>>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [dayOffset, setDayOffset] = useState(0);
+  const day = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + dayOffset);
+
+  useEffect(() => {
+    if (!can("bookings.read")) return;
+    const startDate = day.toISOString().slice(0, 10);
+    Promise.all([bookingsApi.dispatchCalendar({ start_date: startDate, end_date: startDate }), bookingsApi.list({ assignment_status: "awaiting_assignment", start_date: startDate, end_date: startDate, limit: 200 }), can("cleaners.read") ? cleanersApi.list({ status: "active" }) : Promise.resolve([])]).then(([events, queue, profiles]) => {
+      const calendarJobs = events.map(toJob);
+      const queueJobs = queue.map(toJob);
+      setJobs([...calendarJobs, ...queueJobs.filter((queued) => !calendarJobs.some((job) => job.id === queued.id))]);
+        setCleaners((profiles as Array<Record<string, unknown>>).map((cleaner) => ({ id: String(cleaner.id), name: String(cleaner.full_name), zone: String(cleaner.service_area ?? ""), availability: cleaner.is_available ? "Available" : "Unavailable", rating: cleaner.rating as string | number | null })));
+    }).catch((cause) => toast.error(cause instanceof Error ? cause.message : "Unable to load dispatch data."));
+  }, [dayOffset, can, refreshKey]);
+
+  useEffect(() => {
+    if (!selected || !can("bookings.assign") || !["Unassigned", "Assigned"].includes(selected.status)) { setMatches([]); return; }
+    bookingsApi.matches(selected.id).then((items) => setMatches(items.map((item) => ({ id: item.cleaner_id, name: item.full_name, zone: item.service_area, availability: "Available", rating: item.rating ?? "—", distance: item.distance_km, workload: item.current_assignments })))).catch((cause) => toast.error(cause instanceof Error ? cause.message : "Unable to load cleaner matches."));
+  }, [selected?.id, selected?.cleanerId, can]);
 
   const zones = useMemo(() => Array.from(new Set(cleaners.map((c) => c.zone))), []);
 
@@ -96,59 +271,49 @@ function DispatchPage() {
         (j) =>
           (zone === "all" || j.zone === zone) &&
           (query === "" ||
-            [j.id, j.customer, j.service, j.address].join(" ").toLowerCase().includes(query.toLowerCase())),
+            [j.id, j.customer, j.service, j.address]
+              .join(" ")
+              .toLowerCase()
+              .includes(query.toLowerCase())),
       ),
     [jobs, zone, query],
   );
 
   const unassigned = visible.filter((j) => j.cleanerId === null);
-  const day = new Date(2026, 7, 4 + dayOffset);
 
-  function commit(next: Job[]) {
-    setHistory((h) => [...h, jobs].slice(-10));
-    setJobs(next);
-  }
-
-  function assign(jobId: string, cleanerId: string | null, start?: number) {
+  async function assign(jobId: string, cleanerId: string) {
     const job = jobs.find((j) => j.id === jobId);
     if (!job) return;
+    if (!can("bookings.assign")) { toast.error("You do not have permission to assign cleaners."); return; }
     const cleaner = cleaners.find((c) => c.id === cleanerId);
-    commit(
-      jobs.map((j) =>
-        j.id === jobId
-          ? { ...j, cleanerId, start: start ?? j.start, status: cleanerId ? (j.status === "Unassigned" ? "Assigned" : j.status) : "Unassigned" }
-          : j,
-      ),
-    );
+    try { const updated = await bookingsApi.assignCleaner(jobId, cleanerId, job.cleanerId ? "Reassigned from Dispatch Calendar." : "Assigned from Dispatch Calendar.");
     toast.success(
-      cleanerId ? `${job.id} assigned to ${cleaner?.name}` : `${job.id} moved back to the queue`,
-      { description: cleanerId ? `${job.service} · starts ${start ?? job.start}:00` : "Waiting in unassigned queue" },
-    );
+      `${job.id} assigned to ${cleaner?.name ?? "cleaner"}`,
+      {
+        description: `${job.service} · starts ${job.start}:00`,
+      },
+    ); setSelected(toJob(updated)); setRefreshKey((key) => key + 1); } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Unable to assign cleaner."); setRefreshKey((key) => key + 1); }
   }
 
-  function undo() {
-    setHistory((h) => {
-      if (!h.length) return h;
-      setJobs(h[h.length - 1]);
-      toast("Last dispatch action undone", { icon: <Undo2 className="h-4 w-4" /> });
-      return h.slice(0, -1);
-    });
+  async function autoAssign() {
+    if (!can("bookings.assign")) { toast.error("You do not have permission to dispatch cleaners."); return; }
+    const awaiting = unassigned;
+    if (!awaiting.length) { toast("No jobs are waiting for assignment."); return; }
+    const results = await Promise.allSettled(awaiting.map((job) => bookingsApi.autoDispatch(job.id)));
+    const assigned = results.filter((result) => result.status === "fulfilled").length;
+    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (assigned) toast.success(`Auto-dispatch assigned ${assigned} job${assigned === 1 ? "" : "s"}.`);
+    if (rejected) toast.error(rejected.reason instanceof Error ? rejected.reason.message : "Some jobs need manual review.");
+    setRefreshKey((key) => key + 1);
   }
 
-  function autoAssign() {
-    let next = [...jobs];
-    let count = 0;
-    for (const job of next.filter((j) => !j.cleanerId)) {
-      const match =
-        cleaners.find((c) => c.zone === job.zone && c.availability === "Available") ??
-        cleaners.find((c) => c.availability === "Available");
-      if (!match) continue;
-      next = next.map((j) => (j.id === job.id ? { ...j, cleanerId: match.id, status: "Assigned" as const } : j));
-      count++;
-    }
-    commit(next);
-    toast.success(`Auto-dispatch matched ${count} job${count === 1 ? "" : "s"}`, { description: "Balanced by zone and availability" });
-  }
+  useEffect(() => {
+    const url = can("bookings.read") ? dispatchLiveUrl() : null;
+    if (!url) return;
+    const socket = new WebSocket(url);
+    socket.onmessage = () => setRefreshKey((key) => key + 1);
+    return () => socket.close();
+  }, [can]);
 
   const conflicts = useMemo(() => {
     const set = new Set<string>();
@@ -179,20 +344,39 @@ function DispatchPage() {
           </div>
 
           <div className="flex items-center rounded-md border bg-background">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDayOffset((d) => d - 1)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setDayOffset((d) => d - 1)}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="px-2 text-xs font-medium tabular-nums">
-              {day.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+              {day.toLocaleDateString("en-GB", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              })}
             </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDayOffset((d) => d + 1)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setDayOffset((d) => d + 1)}
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
 
           <div className="relative">
             <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter jobs…" className="h-8 w-44 pl-8 text-xs" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter jobs…"
+              className="h-8 w-44 pl-8 text-xs"
+            />
           </div>
 
           <Select value={zone} onValueChange={setZone}>
@@ -202,12 +386,22 @@ function DispatchPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All zones</SelectItem>
-              {zones.map((z) => <SelectItem key={z} value={z}>{z}</SelectItem>)}
+              {zones.map((z) => (
+                <SelectItem key={z} value={z}>
+                  {z}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
           <div className="flex items-center rounded-md border bg-background p-0.5">
-            {([["timeline", Columns3], ["board", LayoutGrid], ["list", Rows3]] as const).map(([v, Icon]) => (
+            {(
+              [
+                ["timeline", Columns3],
+                ["board", LayoutGrid],
+                ["list", Rows3],
+              ] as const
+            ).map(([v, Icon]) => (
               <Tooltip key={v}>
                 <TooltipTrigger asChild>
                   <button
@@ -222,30 +416,28 @@ function DispatchPage() {
             ))}
           </div>
 
-          <Button variant="outline" size="sm" className="h-8" onClick={undo} disabled={!history.length}>
-            <Undo2 className="h-3.5 w-3.5 mr-1" /> Undo
-          </Button>
-          <Button size="sm" className="h-8" onClick={autoAssign}>
+          <Button size="sm" className="h-8" onClick={() => void autoAssign()} disabled={!can("bookings.assign") || !unassigned.length}>
             <Zap className="h-3.5 w-3.5 mr-1" /> Auto-dispatch
           </Button>
         </div>
 
         <div className="flex-1 flex min-h-0">
           {/* Unassigned rail */}
-          <aside
-            className={`hidden lg:flex w-72 shrink-0 flex-col border-r bg-muted/30 ${hover === "queue" ? "ring-2 ring-inset ring-primary" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setHover("queue"); }}
-            onDragLeave={() => setHover(null)}
-            onDrop={() => { if (dragId) assign(dragId, null); setHover(null); setDragId(null); }}
-          >
+          <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r bg-muted/30">
             <div className="px-4 py-3 border-b flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unassigned queue</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Unassigned queue
+              </div>
               <Badge variant="secondary">{unassigned.length}</Badge>
             </div>
             <ScrollArea className="flex-1">
               <div className="p-3 space-y-2">
                 {unassigned.map((j) => (
-                  <JobCard key={j.id} job={j} onDragStart={() => setDragId(j.id)} onClick={() => setSelected(j)} />
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    onClick={() => setSelected(j)}
+                  />
                 ))}
                 {!unassigned.length && (
                   <div className="text-center text-xs text-muted-foreground py-10">
@@ -253,9 +445,6 @@ function DispatchPage() {
                     Every job is dispatched.
                   </div>
                 )}
-                <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground">
-                  <Plus className="h-3.5 w-3.5 mr-1" /> New job
-                </Button>
               </div>
             </ScrollArea>
           </aside>
@@ -265,9 +454,15 @@ function DispatchPage() {
             {view === "timeline" && (
               <div className="min-w-[900px]">
                 <div className="sticky top-0 z-10 flex bg-card/95 backdrop-blur border-b">
-                  <div className="w-52 shrink-0 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Cleaner</div>
+                  <div className="w-52 shrink-0 px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Cleaner
+                  </div>
                   {HOURS.map((h) => (
-                    <div key={h} style={{ width: COL }} className="shrink-0 border-l px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground text-center">
+                    <div
+                      key={h}
+                      style={{ width: COL }}
+                      className="shrink-0 border-l px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground text-center"
+                    >
                       {h}:00
                     </div>
                   ))}
@@ -277,7 +472,11 @@ function DispatchPage() {
                   return (
                     <div key={c.id} className="flex border-b group">
                       <div className="w-52 shrink-0 px-4 py-3 flex items-center gap-2">
-                        <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{initials(c.name)}</AvatarFallback></Avatar>
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="text-[10px]">
+                            {initials(c.name)}
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate">{c.name}</div>
                           <div className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
@@ -290,23 +489,23 @@ function DispatchPage() {
                           <div
                             key={h}
                             style={{ width: COL }}
-                            className={`shrink-0 border-l ${hover === `${c.id}-${h}` ? "bg-primary/10" : "group-hover:bg-muted/30"}`}
-                            onDragOver={(e) => { e.preventDefault(); setHover(`${c.id}-${h}`); }}
-                            onDragLeave={() => setHover(null)}
-                            onDrop={() => { if (dragId) assign(dragId, c.id, h); setHover(null); setDragId(null); }}
+                            className="shrink-0 border-l group-hover:bg-muted/30"
                           />
                         ))}
                         {row.map((j) => (
                           <button
                             key={j.id}
-                            draggable
-                            onDragStart={() => setDragId(j.id)}
                             onClick={() => setSelected(j)}
-                            style={{ left: (j.start - HOURS[0]) * COL + 4, width: j.duration * COL - 8 }}
+                            style={{
+                              left: (j.start - HOURS[0]) * COL + 4,
+                              width: j.duration * COL - 8,
+                            }}
                             className={`absolute top-2 bottom-2 rounded-md border px-2 py-1 text-left text-xs overflow-hidden ${statusTone[j.status]} ${conflicts.has(j.id) ? "ring-2 ring-destructive" : ""} hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing`}
                           >
                             <div className="font-medium truncate">{j.service}</div>
-                            <div className="text-muted-foreground truncate">{j.customer} · {j.start}:00</div>
+                            <div className="text-muted-foreground truncate">
+                              {j.customer} · {j.start}:00
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -323,23 +522,20 @@ function DispatchPage() {
                   return (
                     <div key={status} className="w-72 shrink-0">
                       <div className="flex items-center justify-between mb-2 px-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{status}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {status}
+                        </span>
                         <Badge variant="secondary">{list.length}</Badge>
                       </div>
                       <div
-                        className={`rounded-lg border bg-muted/30 p-2 space-y-2 min-h-[260px] ${hover === `col-${status}` ? "ring-2 ring-primary" : ""}`}
-                        onDragOver={(e) => { e.preventDefault(); setHover(`col-${status}`); }}
-                        onDragLeave={() => setHover(null)}
-                        onDrop={() => {
-                          if (dragId) {
-                            commit(jobs.map((j) => (j.id === dragId ? { ...j, status, cleanerId: status === "Unassigned" ? null : j.cleanerId } : j)));
-                            toast.success(`${dragId} → ${status}`);
-                          }
-                          setHover(null); setDragId(null);
-                        }}
+                        className="rounded-lg border bg-muted/30 p-2 space-y-2 min-h-[260px]"
                       >
                         {list.map((j) => (
-                          <JobCard key={j.id} job={j} onDragStart={() => setDragId(j.id)} onClick={() => setSelected(j)} />
+                          <JobCard
+                            key={j.id}
+                            job={j}
+                            onClick={() => setSelected(j)}
+                          />
                         ))}
                       </div>
                     </div>
@@ -365,14 +561,26 @@ function DispatchPage() {
                     </thead>
                     <tbody className="divide-y">
                       {visible.map((j) => (
-                        <tr key={j.id} className="hover:bg-muted/40 cursor-pointer" onClick={() => setSelected(j)}>
+                        <tr
+                          key={j.id}
+                          className="hover:bg-muted/40 cursor-pointer"
+                          onClick={() => setSelected(j)}
+                        >
                           <td className="px-4 py-2.5 font-medium">{j.id}</td>
                           <td className="px-4 py-2.5">{j.service}</td>
                           <td className="px-4 py-2.5">{j.customer}</td>
                           <td className="px-4 py-2.5 text-muted-foreground">{j.zone}</td>
-                          <td className="px-4 py-2.5 tabular-nums text-muted-foreground">{j.start}:00–{j.start + j.duration}:00</td>
-                          <td className="px-4 py-2.5">{cleaners.find((c) => c.id === j.cleanerId)?.name ?? <span className="text-muted-foreground">—</span>}</td>
-                          <td className="px-4 py-2.5"><Badge variant="secondary">{j.status}</Badge></td>
+                          <td className="px-4 py-2.5 tabular-nums text-muted-foreground">
+                            {j.start}:00–{j.start + j.duration}:00
+                          </td>
+                          <td className="px-4 py-2.5">
+                            {cleaners.find((c) => c.id === j.cleanerId)?.name ?? (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <Badge variant="secondary">{j.status}</Badge>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -392,38 +600,71 @@ function DispatchPage() {
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   {selected.service}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${priorityTone[selected.priority]}`}>{selected.priority}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${priorityTone[selected.priority]}`}
+                  >
+                    {selected.priority}
+                  </span>
                 </SheetTitle>
-                <SheetDescription>{selected.id} · KES {selected.amount.toLocaleString()}</SheetDescription>
+                <SheetDescription>
+                  {selected.id} · KES {selected.amount.toLocaleString()}
+                </SheetDescription>
               </SheetHeader>
               <div className="px-4 pb-6 space-y-4 text-sm">
                 <Row icon={User} label="Customer" value={selected.customer} />
-                <Row icon={MapPin} label="Address" value={`${selected.address} (${selected.zone})`} />
-                <Row icon={Clock} label="Window" value={`${selected.start}:00 – ${selected.start + selected.duration}:00`} />
+                <Row
+                  icon={MapPin}
+                  label="Address"
+                  value={`${selected.address} (${selected.zone})`}
+                />
+                <Row
+                  icon={Clock}
+                  label="Window"
+                  value={`${selected.start}:00 – ${selected.start + selected.duration}:00`}
+                />
                 <Separator />
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Assign cleaner</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                    {selected.cleanerId ? "Reassign cleaner" : "Assign cleaner"}
+                  </div>
                   <div className="space-y-1.5">
-                    {cleaners.map((c) => (
+                    {matches.map((c) => (
                       <button
                         key={c.id}
-                        onClick={() => { assign(selected.id, c.id); setSelected({ ...selected, cleanerId: c.id, status: "Assigned" }); }}
+                        disabled={!can("bookings.assign")}
+                        onClick={() => {
+                          void assign(selected.id, c.id);
+                        }}
                         className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-left hover:bg-muted ${selected.cleanerId === c.id ? "border-primary bg-primary/10" : ""}`}
                       >
-                        <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{initials(c.name)}</AvatarFallback></Avatar>
+                        <Avatar className="h-7 w-7">
+                          <AvatarFallback className="text-[10px]">
+                            {initials(c.name)}
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate">{c.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{c.zone} · ★ {c.rating}</div>
+                          <div className="text-[11px] text-muted-foreground">{c.zone} · ★ {c.rating}{"distance" in c && c.distance != null ? ` · ${c.distance.toFixed(1)} km` : ""}{"workload" in c ? ` · ${c.workload ?? 0} active jobs` : ""}</div>
                         </div>
-                        <Badge variant={c.availability === "Available" ? "secondary" : "outline"} className="text-[10px]">{c.availability}</Badge>
+                        <Badge
+                          variant={c.availability === "Available" ? "secondary" : "outline"}
+                          className="text-[10px]"
+                        >
+                          {c.availability}
+                        </Badge>
                       </button>
                     ))}
+                    {!matches.length && <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No eligible cleaners were found for this booking. Try again after updating availability or service area.</p>}
                   </div>
                 </div>
                 <Separator />
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Dispatch notes</div>
-                  <p className="text-muted-foreground">{selected.notes || "No notes for this job."}</p>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Dispatch notes
+                  </div>
+                  <p className="text-muted-foreground">
+                    {selected.notes || "No notes for this job."}
+                  </p>
                 </div>
               </div>
             </>
@@ -446,23 +687,34 @@ function Row({ icon: Icon, label, value }: { icon: any; label: string; value: st
   );
 }
 
-function JobCard({ job, onDragStart, onClick }: { job: Job; onDragStart: () => void; onClick: () => void }) {
+function JobCard({
+  job,
+  onClick,
+}: {
+  job: Job;
+  onClick: () => void;
+}) {
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
       onClick={onClick}
-      className="group rounded-md border bg-card p-2.5 shadow-sm hover:shadow-md hover:border-primary/50 transition-all cursor-grab active:cursor-grabbing"
+      className="group rounded-md border bg-card p-2.5 shadow-sm hover:shadow-md hover:border-primary/50 transition-all cursor-pointer"
     >
       <div className="flex items-center gap-1.5 mb-1">
-        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50" />
         <span className="text-xs font-medium">{job.service}</span>
-        <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${priorityTone[job.priority]}`}>{job.priority}</span>
+        <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${priorityTone[job.priority]}`}>
+          {job.priority}
+        </span>
       </div>
       <div className="text-xs text-muted-foreground truncate">{job.customer}</div>
       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{job.start}:00</span>
-        <span className="inline-flex items-center gap-1 truncate"><MapPin className="h-3 w-3" />{job.zone}</span>
+        <span className="inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {job.start}:00
+        </span>
+        <span className="inline-flex items-center gap-1 truncate">
+          <MapPin className="h-3 w-3" />
+          {job.zone}
+        </span>
       </div>
     </div>
   );
