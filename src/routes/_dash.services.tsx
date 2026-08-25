@@ -55,6 +55,8 @@ function ServicesPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [service, setService] = useState<Service | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [subscriptionStartDate, setSubscriptionStartDate] = useState("");
+  const [subscriptionEndDate, setSubscriptionEndDate] = useState("");
   const [creating, setCreating] = useState(false);
   const [creatingAddon, setCreatingAddon] = useState(false);
   const [creatingPackage, setCreatingPackage] = useState(false);
@@ -67,9 +69,13 @@ function ServicesPage() {
   const [packageForm, setPackageForm] = useState(emptyPackage);
 
   const load = async () => {
+    if (subscriptionStartDate && subscriptionEndDate && subscriptionStartDate > subscriptionEndDate) {
+      setError("Start date cannot be after end date.");
+      return;
+    }
     try {
       setError(null);
-      const [catalog, plans] = await Promise.all([servicesApi.list(true), servicesApi.subscriptions()]);
+      const [catalog, plans] = await Promise.all([servicesApi.list(true), servicesApi.subscriptions({ start_date: subscriptionStartDate || undefined, end_date: subscriptionEndDate || undefined })]);
       setServices(catalog);
       setSubscriptions(plans);
     } catch (cause) {
@@ -213,9 +219,10 @@ function ServicesPage() {
         <TabsContent value="catalog" className="mt-4">
           <Card className="p-4">
             <Table>
-              <TableHeader><TableRow><TableHead>Service</TableHead><TableHead>Base price</TableHead><TableHead>Duration</TableHead><TableHead>Packages</TableHead><TableHead>Add-ons</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="w-14">#</TableHead><TableHead>Service</TableHead><TableHead>Base price</TableHead><TableHead>Duration</TableHead><TableHead>Packages</TableHead><TableHead>Add-ons</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
-                {services.map((item) => <TableRow key={item.id}>
+                {services.map((item, index) => <TableRow key={item.id}>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</TableCell>
                   <TableCell><p className="font-medium">{item.name}</p><p className="text-xs text-muted-foreground">{item.description || item.slug}</p></TableCell>
                   <TableCell>KES {Number(item.base_price).toLocaleString()}</TableCell>
                   <TableCell>{item.estimated_duration_minutes} min</TableCell>
@@ -233,17 +240,24 @@ function ServicesPage() {
                     }}>Deactivate</Button>
                   </div></TableCell>
                 </TableRow>)}
-                {!services.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No services found.</TableCell></TableRow>}
+                {!services.length && <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">No services found.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </Card>
         </TabsContent>
         <TabsContent value="subscriptions" className="mt-4">
           <Card className="p-4">
+            <div className="mb-4 flex flex-wrap gap-3">
+              <Input aria-label="Subscription start date" className="w-40" type="date" value={subscriptionStartDate} max={subscriptionEndDate || undefined} onChange={(event) => setSubscriptionStartDate(event.target.value)} />
+              <Input aria-label="Subscription end date" className="w-40" type="date" value={subscriptionEndDate} min={subscriptionStartDate || undefined} onChange={(event) => setSubscriptionEndDate(event.target.value)} />
+              <Button onClick={() => void load()}>Apply filters</Button>
+              <Button variant="ghost" onClick={() => { setSubscriptionStartDate(""); setSubscriptionEndDate(""); }}>Reset</Button>
+            </div>
             <Table>
-              <TableHeader><TableRow><TableHead>Subscription</TableHead><TableHead>Billing cycle</TableHead><TableHead>Next service</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Price per cycle</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="w-14">#</TableHead><TableHead>Subscription</TableHead><TableHead>Billing cycle</TableHead><TableHead>Next service</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Price per cycle</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
-                {subscriptions.map((item) => <TableRow key={item.id}>
+                {subscriptions.map((item, index) => <TableRow key={item.id}>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</TableCell>
                   <TableCell className="font-mono text-xs">{item.id}</TableCell>
                   <TableCell>{item.billing_cycle.replaceAll("_", " ")}</TableCell>
                   <TableCell>{item.next_service_date || "—"}</TableCell>
@@ -254,7 +268,7 @@ function ServicesPage() {
                     <Button size="sm" variant="destructive" disabled={item.status === "cancelled"} onClick={() => void cancelSubscription(item)}>Cancel</Button>
                   </div></TableCell>
                 </TableRow>)}
-                {!subscriptions.length && <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No subscriptions found.</TableCell></TableRow>}
+                {!subscriptions.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No subscriptions found.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </Card>

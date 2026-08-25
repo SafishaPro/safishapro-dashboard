@@ -1,9 +1,9 @@
 import { toast } from "sonner";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1").replace(
-  /\/$/,
-  "",
-);
+const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+const API_BASE_URL = configuredApiUrl.endsWith("/api/v1")
+  ? configuredApiUrl
+  : `${configuredApiUrl}/api/v1`;
 const SESSION_KEY = "safishapro_admin_session";
 
 export function dispatchLiveUrl() {
@@ -67,6 +67,7 @@ export type PropertyTypeField = {
   label: string;
   type: "number" | "text" | "select" | "boolean";
   required: boolean;
+  options: string[];
 };
 export type PropertyType = {
   id: string;
@@ -231,6 +232,8 @@ export type Booking = {
   special_instructions: string | null;
   additional_notes?: string | null;
   property_size?: string | null;
+  property_type?: PropertyType | null;
+  property_details?: Record<string, unknown>;
   rooms?: number | null;
   bathrooms?: number | null;
   pricing_snapshot?: Record<string, unknown> | null;
@@ -239,17 +242,26 @@ export type Booking = {
 };
 export type Payment = {
   id: string;
+  payment_number: string;
   booking_id: string;
+  booking_invoice: string;
   customer_id: string;
+  customer_name: string;
   amount: string | number;
   currency: string;
-  provider: "dummy" | "mpesa";
+  provider: "simulated" | "mpesa";
   status: string;
   phone_number: string | null;
+  checkout_request_id?: string | null;
   receipt_number: string | null;
+  result_code?: string | null;
+  result_description?: string | null;
+  failure_reason?: string | null;
+  retry_count?: number;
   initiated_at: string | null;
   confirmed_at: string | null;
   created_at: string;
+  updated_at?: string;
   booking_status: string | null;
   events: Array<{
     event_key: string;
@@ -258,6 +270,52 @@ export type Payment = {
     note: string | null;
     created_at: string;
   }>;
+};
+export type Payout = {
+  id: string;
+  booking_id: string;
+  booking: {
+    id: string;
+    name: string;
+    location: {
+      address_line: string;
+      city: string | null;
+      latitude: number;
+      longitude: number;
+    };
+  };
+  cleaner_id: string;
+  cleaner_name: string;
+  amount: string | number;
+  currency: string;
+  status: "pending" | "approved" | "paid" | "voided" | string;
+  provider: string;
+  provider_reference: string | null;
+  note: string | null;
+  approved_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+  events: Array<{
+    from_status: string | null;
+    to_status: string;
+    note: string | null;
+    created_at: string;
+  }>;
+};
+export type SupportTicket = {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  booking_id: string | null;
+  assigned_to_user_id: string | null;
+  subject: string;
+  description: string;
+  category: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  status: "open" | "in_progress" | "resolved" | "closed";
+  created_at: string;
+  updated_at: string;
 };
 export type ServicePackage = {
   id: string;
@@ -301,6 +359,81 @@ export type Service = {
   packages: ServicePackage[];
   sub_services: Service[];
   additional_services: ServiceAddon[];
+};
+export type CleanerSkill = {
+  id: string;
+  name: string;
+  description: string | null;
+  service_ids: string[];
+  services: Array<Pick<Service, "id" | "name" | "slug">>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+export type Cleaner = {
+  id: string;
+  user_id: string | null;
+  full_name: string;
+  phone: string;
+  national_id: string;
+  service_area: string;
+  skill_ids: string[];
+  skills: CleanerSkill[];
+  status: "active" | "inactive" | "suspended";
+  is_available: boolean;
+  current_latitude: number | null;
+  current_longitude: number | null;
+  rating: string | number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  stats?: {
+    total_sessions: number;
+    completed_sessions: number;
+    upcoming_sessions: number;
+    cancelled_sessions: number;
+    no_show_sessions: number;
+    total_reviews: number;
+    average_rating: string | number;
+    completion_rate: number;
+    paid_payouts: number;
+    pending_payouts: number;
+    total_earnings_by_currency: Record<string, string | number>;
+  };
+  recent_reviews?: Array<{ rating: number; review: string | null; created_at: string }>;
+  job_history?: Array<{
+    booking_id: string;
+    service_name: string;
+    package_name: string | null;
+    status: string;
+    scheduled_for: string;
+    city: string | null;
+    address_line: string;
+    quoted_price: string | number;
+    currency: string;
+    assigned_at: string | null;
+    completed_at: string | null;
+  }>;
+  payout_history?: Array<{
+    payout_id: string;
+    booking_id: string;
+    amount: string | number;
+    currency: string;
+    status: string;
+    provider_reference: string | null;
+    note: string | null;
+    approved_at: string | null;
+    paid_at: string | null;
+    created_at: string;
+  }>;
+  audit_history?: Array<{
+    id: string;
+    actor_user_id: string | null;
+    actor_email: string | null;
+    action: string;
+    details: Record<string, unknown> | null;
+    created_at: string;
+  }>;
 };
 export type Subscription = {
   id: string;
@@ -585,6 +718,7 @@ export const bookingsApi = {
     } = {},
   ) => request<Booking[]>(`/bookings${query(params)}`),
   get: (id: string) => request<Booking>(`/bookings/${id}`),
+  propertyTypes: () => request<PropertyType[]>("/bookings/property-types"),
   propertySizes: () => request<Array<{ value: string; label: string }>>("/bookings/property-sizes"),
   create: (body: Record<string, unknown>) => request<Booking>("/bookings", json("POST", body)),
   quote: (body: Record<string, unknown>) =>
@@ -662,13 +796,15 @@ export const paymentsApi = {
       status?: string;
       booking_id?: string;
       customer_id?: string;
-      method?: "dummy" | "mpesa";
+      method?: "simulated" | "mpesa";
       date_from?: string;
       date_to?: string;
       limit?: number;
       offset?: number;
     } = {},
   ) => request<Payment[]>(`/payments${query(params)}`),
+  customerPayments: (customerId: string, params: { status?: string; limit?: number; offset?: number } = {}) =>
+    request<Payment[]>(`/payments/customers/${customerId}${query(params)}`),
   get: (id: string) => request<Payment>(`/payments/${id}`),
   initiate: (booking_id: string, phone_number?: string) =>
     request<Payment>(
@@ -701,14 +837,34 @@ export const paymentsApi = {
   exportUrl: (params: Record<string, string>) => `${API_BASE_URL}/payments/export${query(params)}`,
   receiptPdfUrl: (id: string) => `${API_BASE_URL}/payments/${id}/receipt.pdf`,
 };
+export const payoutsApi = {
+  list: (params: { cleaner_id?: string; status?: string; date_from?: string; date_to?: string } = {}) =>
+    request<Payout[]>(`/payouts${query(params)}`),
+  create: (body: { booking_id: string; amount: number; note?: string }) =>
+    request<Payout>("/payouts", json("POST", body)),
+  approve: (id: string, body: { note?: string; idempotency_key: string }) =>
+    request<Payout>(`/payouts/${id}/approve`, json("POST", body)),
+  simulatePayment: (id: string, body: { note?: string; idempotency_key: string }) =>
+    request<Payout>(`/payouts/${id}/simulate-payment`, json("POST", body)),
+  void: (id: string, body: { note?: string; idempotency_key: string }) =>
+    request<Payout>(`/payouts/${id}/void`, json("POST", body)),
+};
+export const supportTicketsApi = {
+  list: (status?: SupportTicket["status"]) =>
+    request<SupportTicket[]>(`/support-tickets${query({ status })}`),
+  update: (
+    id: string,
+    body: Partial<Pick<SupportTicket, "status" | "priority" | "assigned_to_user_id">>,
+  ) => request<SupportTicket>(`/support-tickets/${id}`, json("PATCH", body)),
+};
 export const cleanersApi = {
   list: (params: Record<string, string | boolean> = {}) =>
-    request<Array<Record<string, unknown>>>(`/cleaners${query(params)}`),
-  get: (id: string) => request<Record<string, unknown>>(`/cleaners/${id}`),
+    request<Cleaner[]>(`/cleaners${query(params)}`),
+  get: (id: string) => request<Cleaner>(`/cleaners/${id}`),
   create: (body: Record<string, unknown>) =>
-    request<Record<string, unknown>>("/cleaners", json("POST", body)),
+    request<Cleaner>("/cleaners", json("POST", body)),
   update: (id: string, body: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/cleaners/${id}`, json("PATCH", body)),
+    request<Cleaner>(`/cleaners/${id}`, json("PATCH", body)),
   availability: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/cleaners/${id}/availability`, json("PATCH", body)),
   deactivate: (id: string) =>
@@ -727,6 +883,14 @@ export const cleanersApi = {
     request<Record<string, unknown>>(`/cleaners/shifts/${id}`, json("PATCH", body)),
   deactivateShift: (id: string) =>
     request<Record<string, unknown>>(`/cleaners/shifts/${id}`, { method: "DELETE" }),
+  skills: (includeInactive = false) =>
+    request<CleanerSkill[]>(`/cleaners/skills${includeInactive ? "?include_inactive=true" : ""}`),
+  createSkill: (body: { name: string; description?: string; service_ids: string[]; is_active?: boolean }) =>
+    request<CleanerSkill>("/cleaners/skills", json("POST", body)),
+  updateSkill: (id: string, body: Partial<{ name: string; description: string | null; service_ids: string[]; is_active: boolean }>) =>
+    request<CleanerSkill>(`/cleaners/skills/${id}`, json("PATCH", body)),
+  deactivateSkill: (id: string) =>
+    request<CleanerSkill>(`/cleaners/skills/${id}`, { method: "DELETE" }),
 };
 export const servicesApi = {
   list: (includeInactive = false) =>
@@ -776,7 +940,7 @@ export const servicesApi = {
     request<Record<string, unknown>>(`/services/${serviceId}/packages/${packageId}/tiers/${id}`, {
       method: "DELETE",
     }),
-  subscriptions: (params: { status?: string; customer_id?: string; package_id?: string } = {}) =>
+  subscriptions: (params: { status?: string; customer_id?: string; package_id?: string; start_date?: string; end_date?: string } = {}) =>
     request<Subscription[]>(`/services/subscriptions${query(params)}`),
   updateSubscription: (id: string, body: Record<string, unknown>) =>
     request<Subscription>(`/services/subscriptions/${id}`, json("PATCH", body)),

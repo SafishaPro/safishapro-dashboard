@@ -1,37 +1,31 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { payouts } from "@/lib/mock-data";
-import { StatusBadge } from "./_dash.dashboard";
+import { bookingsApi, payoutsApi, type Booking, type Payout } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_dash/payouts")({ component: PayoutsPage });
+const statuses = ["pending", "approved", "paid", "voided"] as const;
+const statusVariant = (status: string) => status === "paid" ? "success" : status === "voided" ? "destructive" : status === "approved" ? "default" : "secondary";
+const makeKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function PayoutsPage() {
-  return (
-    <div>
-      <PageHeader title="Cleaner Payouts" description="Pending and completed payouts to cleaners." actions={<Button>Run payout batch</Button>} />
-      <Card className="p-4">
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>ID</TableHead><TableHead>Cleaner</TableHead><TableHead>Period</TableHead>
-            <TableHead>Date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {payouts.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                <TableCell className="font-medium">{p.cleaner}</TableCell>
-                <TableCell>{p.period}</TableCell>
-                <TableCell>{p.date}</TableCell>
-                <TableCell><StatusBadge status={p.status} /></TableCell>
-                <TableCell className="text-right">KES {p.amount.toLocaleString()}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
-  );
+  const { can } = useAuth();
+  const [status, setStatus] = useState<(typeof statuses)[number]>("pending"); const [payouts, setPayouts] = useState<Payout[]>([]); const [dateFrom, setDateFrom] = useState(""); const [dateTo, setDateTo] = useState(""); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [creating, setCreating] = useState(false); const [bookingId, setBookingId] = useState(""); const [eligibleBookings, setEligibleBookings] = useState<Booking[]>([]); const [amount, setAmount] = useState(""); const [note, setNote] = useState(""); const [working, setWorking] = useState<string | null>(null); const [keys, setKeys] = useState<Record<string, string>>({});
+  const load = async () => { if (!can("payouts.read")) return; if (dateFrom && dateTo && dateFrom > dateTo) { setError("Start date cannot be after end date."); return; } try { setLoading(true); setError(null); setPayouts(await payoutsApi.list({ status, date_from: dateFrom || undefined, date_to: dateTo || undefined })); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load payouts."); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, [status]);
+  const openCreate = async () => { try { setError(null); const bookings = await bookingsApi.list({ status: "completed", limit: 200 }); const eligible = bookings.filter((booking) => booking.cleaner); setEligibleBookings(eligible); if (!eligible.length) { setError("There are no completed bookings with an assigned cleaner ready for payout."); return; } setCreating(true); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load completed bookings."); } };
+  const action = async (payout: Payout, kind: "approve" | "pay" | "void") => { const keyName = `${kind}:${payout.id}`; const idempotency_key = keys[keyName] ?? makeKey(); if (!keys[keyName]) setKeys((current) => ({ ...current, [keyName]: idempotency_key })); try { setWorking(keyName); if (kind === "approve") await payoutsApi.approve(payout.id, { note: "Approved from dashboard", idempotency_key }); if (kind === "pay") await payoutsApi.simulatePayment(payout.id, { note: "Demo payout sent from dashboard", idempotency_key }); if (kind === "void") await payoutsApi.void(payout.id, { note: "Voided from dashboard", idempotency_key }); setKeys((current) => { const next = { ...current }; delete next[keyName]; return next; }); await load(); } finally { setWorking(null); } };
+  const create = async () => { const parsedAmount = Number(amount); if (!bookingId.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) { setError("Enter a completed booking ID and a valid payout amount."); return; } try { await payoutsApi.create({ booking_id: bookingId.trim(), amount: parsedAmount, ...(note.trim() ? { note: note.trim() } : {}) }); setCreating(false); setBookingId(""); setAmount(""); setNote(""); setStatus("pending"); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to create payout."); } };
+  if (!can("payouts.read")) return <div className="text-sm text-muted-foreground">You do not have permission to view cleaner payouts.</div>;
+  return <div className="space-y-6"><PageHeader title="Cleaner Payouts" description="Completed cleanings automatically create pending payouts for finance approval." actions={can("payouts.create") ? <Button onClick={() => void openCreate()}>Create payout for older booking</Button> : undefined} />{error && <p className="text-sm text-destructive">{error}</p>}<Tabs value={status} onValueChange={(value) => setStatus(value as typeof status)}><TabsList className="h-auto flex-wrap justify-start gap-1"><TabsTrigger value="pending">Pending</TabsTrigger><TabsTrigger value="approved">Approved</TabsTrigger><TabsTrigger value="paid">Paid</TabsTrigger><TabsTrigger value="voided">Voided</TabsTrigger></TabsList></Tabs><Card className="overflow-x-auto p-4"><div className="mb-4 flex flex-wrap gap-3"><Input aria-label="Payout start date" className="w-40" type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} /><Input aria-label="Payout end date" className="w-40" type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} /><Button onClick={() => void load()}>Apply filters</Button><Button variant="ghost" onClick={() => { setDateFrom(""); setDateTo(""); }}>Reset</Button></div><Table><TableHeader><TableRow><TableHead className="w-14">#</TableHead><TableHead>Cleaner</TableHead><TableHead>Booking</TableHead><TableHead>Location</TableHead><TableHead>Reference</TableHead><TableHead>Status</TableHead><TableHead>Approved / paid</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{payouts.map((payout, index) => { const pending = working?.endsWith(payout.id); return <TableRow key={payout.id}><TableCell className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</TableCell><TableCell className="font-medium">{payout.cleaner_name}</TableCell><TableCell className="font-medium">{payout.booking.name}</TableCell><TableCell><div>{payout.booking.location.address_line}</div><div className="text-xs text-muted-foreground">{payout.booking.location.city || "—"}</div></TableCell><TableCell>{payout.provider_reference || "—"}</TableCell><TableCell><Badge variant={statusVariant(payout.status)}>{payout.status}</Badge></TableCell><TableCell className="text-xs text-muted-foreground">{payout.paid_at ? `Paid ${new Date(payout.paid_at).toLocaleString()}` : payout.approved_at ? `Approved ${new Date(payout.approved_at).toLocaleString()}` : `Created ${new Date(payout.created_at).toLocaleString()}`}</TableCell><TableCell className="text-right font-medium">{payout.currency} {Number(payout.amount).toLocaleString()}</TableCell><TableCell><div className="flex justify-end gap-2">{payout.status === "pending" && can("payouts.approve") && <Button size="sm" onClick={() => action(payout, "approve")} disabled={pending}>Approve</Button>}{payout.status === "approved" && can("payouts.pay") && <Button size="sm" onClick={() => action(payout, "pay")} disabled={pending}>Send demo payout</Button>}{(payout.status === "pending" || payout.status === "approved") && can("payouts.approve") && <Button size="sm" variant="outline" onClick={() => action(payout, "void")} disabled={pending}>Void</Button>}</div>{payout.events.length > 0 && <details className="mt-2 text-right text-xs text-muted-foreground"><summary className="cursor-pointer">History</summary>{payout.events.map((event, index) => <div key={`${event.created_at}-${index}`}>{event.to_status} · {new Date(event.created_at).toLocaleString()}</div>)}</details>}</TableCell></TableRow>; })}{!loading && !payouts.length && <TableRow><TableCell colSpan={9} className="h-24 text-center text-muted-foreground">No {status} payouts found.</TableCell></TableRow>}{loading && <TableRow><TableCell colSpan={9} className="h-24 text-center text-muted-foreground">Loading payouts…</TableCell></TableRow>}</TableBody></Table></Card><Dialog open={creating} onOpenChange={setCreating}><DialogContent><DialogHeader><DialogTitle>Create cleaner payout</DialogTitle><DialogDescription>Use this only for an older completed booking that predates automatic payout initiation.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="payout-booking">Completed booking</Label><Select value={bookingId} onValueChange={setBookingId}><SelectTrigger id="payout-booking"><SelectValue placeholder="Choose a completed booking" /></SelectTrigger><SelectContent>{eligibleBookings.map((booking) => <SelectItem key={booking.id} value={booking.id}>{booking.service_name} · {booking.cleaner?.full_name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="payout-amount">Amount (KES)</Label><Input id="payout-amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="payout-note">Note (optional)</Label><Input id="payout-note" value={note} onChange={(event) => setNote(event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setCreating(false)}>Cancel</Button><Button onClick={create}>Create payout</Button></DialogFooter></DialogContent></Dialog></div>;
 }

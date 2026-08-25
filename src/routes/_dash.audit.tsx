@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FileText } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
@@ -16,6 +16,46 @@ const dateTime = (value: string) => new Date(value).toLocaleString();
 const escapeHtml = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 const fileDate = () => new Date().toISOString().slice(0, 10);
 const LOGS_PER_PAGE = 25;
+const words = (value: string) => value.replaceAll(".", " ").replaceAll("_", " ").replace(/\s+/g, " ").trim();
+const title = (value: string) => words(value).replace(/\b\w/g, (letter) => letter.toUpperCase());
+const actionPhrases: Record<string, string> = {
+  created: "created",
+  updated: "updated",
+  deleted: "deleted",
+  deactivated: "deactivated",
+  assigned: "assigned",
+  auto_dispatched: "automatically dispatched",
+  availability_updated: "updated availability for",
+  cleaner_assigned: "assigned a cleaner to",
+  status_updated: "updated the status of",
+  password_updated: "updated the password for",
+  permissions_replaced: "replaced permissions for",
+  permission_added: "added a permission to",
+  permission_removed: "removed a permission from",
+};
+const readableAction = (event: AuditLog) => {
+  const [resource = event.target_type, ...actionParts] = event.action.split(".");
+  const action = actionParts.join("_");
+  const phrase = actionPhrases[action] ?? words(action || event.action);
+  return `${phrase} ${words(resource)}`.replace(/\s+/g, " ").trim();
+};
+const targetName = (event: AuditLog) => {
+  const preferredKeys = ["full_name", "name", "customer_name", "cleaner_name", "email", "subject"];
+  const match = preferredKeys.map((key) => event.details[key]).find((value) => typeof value === "string" && value.trim());
+  return match ? String(match) : title(event.target_type);
+};
+const readableValue = (value: unknown): string => {
+  if (Array.isArray(value)) return value.map((item) => title(String(item))).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value ?? "—");
+};
+const readableDetails = (event: AuditLog) => Object.entries(event.details).map(([key, value]) => `${title(key)}: ${readableValue(value)}`).join("; ");
+const activitySentence = (event: AuditLog) => {
+  const target = targetName(event);
+  const namedTarget = target === title(event.target_type) ? "" : ` ${target}`;
+  return `${event.actor_email ?? "System"} ${readableAction(event)}${namedTarget}`;
+};
 
 function downloadFile(content: string, filename: string, type: string) {
   const blob = new Blob([content], { type });
@@ -74,7 +114,7 @@ function AuditPage() {
   const exportCsv = () => {
     const rows = [
       ["Report", "Record type", "Timestamp", "Action / state", "Actor / phone", "Target / OTP", "Status", "Details"],
-      ...(canExportAudit ? audit.map((event) => ["Audit & OTP Monitoring", "Administrative activity", dateTime(event.created_at), event.action, event.actor_email ?? "System", event.target_type, event.target_id ?? "", JSON.stringify(event.details)]) : []),
+      ...(canExportAudit ? audit.map((event) => ["Audit & OTP Monitoring", "Administrative activity", dateTime(event.created_at), activitySentence(event), event.actor_email ?? "System", targetName(event), event.target_id ?? "", readableDetails(event)]) : []),
       ...(canExportOtp ? otp.map((entry) => ["Audit & OTP Monitoring", "OTP metadata", dateTime(entry.created_at), entry.state, entry.phone, entry.otp ?? "", entry.consumed ? "Consumed" : "Not consumed", `Attempts: ${entry.attempts}; expires: ${dateTime(entry.expires_at)}`]) : []),
     ];
     downloadFile(`\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`, `safishapro-monitoring-report-${fileDate()}.csv`, "text/csv;charset=utf-8");
@@ -84,7 +124,7 @@ function AuditPage() {
     const report = window.open("", "_blank");
     if (!report) { setError("Your browser blocked the report window. Allow pop-ups and try again."); return; }
     const kpis = summary ? Object.entries(summary).map(([label, value]) => `<div class="kpi"><span>${escapeHtml(label.replace("_", " "))}</span><strong>${escapeHtml(value)}</strong></div>`).join("") : "";
-    const auditRows = (canExportAudit ? audit : []).map((event) => `<tr><td>${escapeHtml(dateTime(event.created_at))}</td><td><strong>${escapeHtml(event.action)}</strong></td><td>${escapeHtml(event.actor_email ?? "System")}</td><td>${escapeHtml(event.target_type)}</td><td>${escapeHtml(event.target_id ?? "-")}</td></tr>`).join("") || "<tr><td colspan=\"5\" class=\"empty\">No administrative activity available.</td></tr>";
+    const auditRows = (canExportAudit ? audit : []).map((event) => `<tr><td>${escapeHtml(dateTime(event.created_at))}</td><td><strong>${escapeHtml(activitySentence(event))}</strong>${readableDetails(event) ? `<div class="muted">${escapeHtml(readableDetails(event))}</div>` : ""}</td><td>${escapeHtml(event.actor_email ?? "System")}</td><td>${escapeHtml(targetName(event))}</td><td>${escapeHtml(event.target_id ?? "-")}</td></tr>`).join("") || "<tr><td colspan=\"5\" class=\"empty\">No administrative activity available.</td></tr>";
     const otpRows = (canExportOtp ? otp : []).map((entry) => `<tr><td>${escapeHtml(entry.phone)}</td><td>${escapeHtml(entry.otp ?? "-")}</td><td>${escapeHtml(entry.attempts)}</td><td>${escapeHtml(dateTime(entry.expires_at))}</td><td><span class=\"status\">${escapeHtml(entry.state)}</span></td></tr>`).join("") || "<tr><td colspan=\"5\" class=\"empty\">No OTP metadata available.</td></tr>";
     report.document.write(`<!doctype html><html><head><title>SafishaPro Monitoring Report</title><style>body{font-family:Arial,sans-serif;color:#15233a;margin:0;background:#f5f8fc}.page{max-width:1100px;margin:0 auto;background:#fff;padding:42px}.header{border-bottom:3px solid #173a6b;padding-bottom:22px;margin-bottom:28px}.brand{color:#173a6b;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}.header h1{margin:8px 0 6px;font-size:30px}.muted{color:#607087;font-size:13px}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:20px 0 30px}.kpi{border:1px solid #d8e1ec;border-radius:8px;padding:14px;background:#f8fbff}.kpi span{display:block;text-transform:capitalize;font-size:12px;color:#607087}.kpi strong{display:block;margin-top:8px;font-size:23px;color:#173a6b}h2{font-size:17px;margin:28px 0 10px;color:#173a6b}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:#516174;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#edf3f9}th,td{border:1px solid #d8e1ec;padding:9px;vertical-align:top}tr:nth-child(even) td{background:#fbfdff}.status{display:inline-block;padding:3px 7px;border-radius:999px;background:#dceaf9;color:#173a6b;text-transform:capitalize}.empty{text-align:center;color:#607087;padding:18px}.footer{border-top:1px solid #d8e1ec;margin-top:28px;padding-top:12px;color:#607087;font-size:11px}@media print{body{background:#fff}.page{max-width:none;padding:0}h2{break-after:avoid}table{break-inside:auto}tr{break-inside:avoid}.kpis{grid-template-columns:repeat(5,1fr)}}</style></head><body><main class=\"page\"><header class=\"header\"><div class=\"brand\">SafishaPro</div><h1>Audit & OTP Monitoring Report</h1><div class=\"muted\">Generated ${escapeHtml(new Date().toLocaleString())} · Includes the currently loaded monitoring records</div></header>${kpis ? `<section class=\"kpis\">${kpis}</section>` : ""}<section><h2>Administrative activity</h2><table><thead><tr><th>Timestamp</th><th>Action</th><th>Actor</th><th>Target type</th><th>Target ID</th></tr></thead><tbody>${auditRows}</tbody></table></section><section><h2>Recent OTP metadata</h2><table><thead><tr><th>Phone number</th><th>OTP</th><th>Attempts</th><th>Expires at</th><th>Status</th></tr></thead><tbody>${otpRows}</tbody></table></section><footer class=\"footer\">Confidential operational report · SafishaPro</footer></main><script>window.onload=()=>window.print()<\/script></body></html>`);
     report.document.close();
@@ -96,6 +136,6 @@ function AuditPage() {
     {canExport && <p className="-mt-3 text-xs text-muted-foreground">Exports include all monitoring records currently loaded in the dashboard.</p>}
     {summary && <div className="grid gap-3 sm:grid-cols-5">{Object.entries(summary).map(([label, value]) => <Card key={label} className="p-4"><div className="text-xs text-muted-foreground capitalize">{label.replace("_", " ")}</div><div className="text-2xl font-semibold">{value}</div></Card>)}</div>}
     {can("otp_logs.read") && <section className="space-y-3"><h2 className="font-semibold">Recent OTP metadata</h2><Card className="overflow-hidden p-0">{otp.length ? <><Table><TableHeader><TableRow><TableHead>Phone number</TableHead><TableHead>OTP</TableHead><TableHead>Attempts</TableHead><TableHead>Expires at</TableHead><TableHead className="text-right">Status</TableHead></TableRow></TableHeader><TableBody>{visibleOtp.map((entry) => { const active = entry.state === "active" && !entry.consumed; return <TableRow key={entry.id}><TableCell className="font-medium">{entry.phone}</TableCell><TableCell className="font-mono font-semibold tracking-wider text-blue-900">{entry.otp ?? "—"}</TableCell><TableCell>{entry.attempts}</TableCell><TableCell className="text-muted-foreground">{dateTime(entry.expires_at)}</TableCell><TableCell className="text-right"><Badge variant={active ? "success" : "destructive"}>{active ? "Active" : "Inactive"}</Badge></TableCell></TableRow>; })}</TableBody></Table><LogPagination page={Math.min(otpPage, otpPageCount)} total={otp.length} onPageChange={setOtpPage} /></> : <p className="p-4 text-sm text-muted-foreground">No OTP metadata was returned.</p>}</Card></section>}
-    {can("audit_logs.read") && <section className="space-y-3"><h2 className="font-semibold">Administrative activity</h2><Card className="divide-y p-0">{audit.length ? <>{visibleAudit.map((event) => <div key={event.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm"><span className="font-medium">{event.action}</span><span className="text-muted-foreground">by {event.actor_email ?? "System"}</span><span className="text-muted-foreground">· {event.target_type}</span><span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">{dateTime(event.created_at)}</span></div>)}<LogPagination page={Math.min(auditPage, auditPageCount)} total={audit.length} onPageChange={setAuditPage} /></> : <p className="p-4 text-sm text-muted-foreground">No administrative activity in the current API window.</p>}</Card></section>}
+    {can("audit_logs.read") && <section className="space-y-3"><h2 className="font-semibold">Administrative activity</h2><Card className="divide-y p-0">{audit.length ? <>{visibleAudit.map((event) => <article key={event.id} className="px-4 py-3 text-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium first-letter:uppercase">{activitySentence(event)}</p><p className="mt-0.5 text-xs text-muted-foreground">{title(event.target_type)} activity</p></div><time className="whitespace-nowrap text-xs text-muted-foreground" dateTime={event.created_at}>{dateTime(event.created_at)}</time></div>{Object.keys(event.details).length > 0 && <div className="mt-2 flex flex-wrap gap-2">{Object.entries(event.details).slice(0, 4).map(([key, value]) => <Badge key={key} variant="outline" className="font-normal"><span className="mr-1 text-muted-foreground">{title(key)}:</span>{readableValue(value)}</Badge>)}</div>}<details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer hover:text-foreground">Technical details</summary><dl className="mt-2 grid gap-x-4 gap-y-1 rounded-md bg-muted/50 p-3 sm:grid-cols-[auto_1fr]"><dt>Action code</dt><dd className="font-mono text-foreground">{event.action}</dd><dt>Target type</dt><dd>{title(event.target_type)}</dd><dt>Target ID</dt><dd className="break-all font-mono text-foreground">{event.target_id ?? "Not recorded"}</dd><dt>Actor ID</dt><dd className="break-all font-mono text-foreground">{event.actor_user_id ?? "System"}</dd>{Object.entries(event.details).map(([key, value]) => <Fragment key={key}><dt>{title(key)}</dt><dd className="break-words text-foreground">{readableValue(value)}</dd></Fragment>)}</dl></details></article>)}<LogPagination page={Math.min(auditPage, auditPageCount)} total={audit.length} onPageChange={setAuditPage} /></> : <p className="p-4 text-sm text-muted-foreground">No administrative activity in the current API window.</p>}</Card></section>}
   </div>;
 }

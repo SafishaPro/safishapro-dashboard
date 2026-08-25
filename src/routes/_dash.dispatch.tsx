@@ -8,6 +8,15 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -27,8 +36,10 @@ import { useAuth } from "@/lib/auth";
 import { bookingsApi, cleanersApi, dispatchLiveUrl, type Booking } from "@/lib/api";
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   Columns3,
   LayoutGrid,
   ListFilter,
@@ -38,7 +49,6 @@ import {
   Sparkles,
   Clock,
   User,
-  Zap,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_dash/dispatch")({
@@ -65,12 +75,15 @@ export const Route = createFileRoute("/_dash/dispatch")({
 type Job = {
   id: string;
   service: string;
+  packageName: string | null;
+  propertyType: string | null;
   customer: string;
   address: string;
   zone: string;
   start: number; // hour
   duration: number; // hours
   amount: number;
+  currency: string;
   priority: "Standard" | "Priority" | "VIP";
   status: "Unassigned" | "Assigned" | "In Progress" | "Completed";
   cleanerId: string | null;
@@ -79,6 +92,12 @@ type Job = {
 
 const HOURS = Array.from({ length: 11 }, (_, i) => 7 + i);
 const COL = 104;
+const localDateKey = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 /*const INITIAL_JOBS: Job[] = [
   {
@@ -223,47 +242,88 @@ function toJob(source: Record<string, unknown> | Booking): Job {
   const status = String(item.status ?? "awaiting_assignment");
   const cleaner = item.cleaner as Booking["cleaner"] | undefined;
   const cleanerId = item.cleaner_id ? String(item.cleaner_id) : cleaner?.id ?? null;
+  const completedStatuses = new Set(["completed", "payout_pending", "payout_paid"]);
+  const displayStatus: Job["status"] = !cleanerId
+    ? "Unassigned"
+    : completedStatuses.has(status)
+      ? "Completed"
+      : status === "in_progress"
+        ? "In Progress"
+        : "Assigned";
   return {
-    id: String(item.booking_id ?? item.id), service: String(item.service_name ?? "Service"),
-    customer: String(item.customer_name ?? item.customer_id ?? "Customer"),
+    id: String(item.booking_id ?? item.id), service: String(item.service_name ?? "Service"), packageName: item.package_name ? String(item.package_name) : null, propertyType: item.property_type_name ? String(item.property_type_name) : null,
+    customer: String(item.customer_name ?? "Customer name unavailable"),
     address: [item.address_line, item.city].filter(Boolean).join(", ") || "Address not provided",
     zone: String(item.city ?? "Unassigned"), start: scheduled.getHours(),
     duration: Math.max(1, Math.ceil(Number(item.estimated_duration_minutes ?? 60) / 60)), amount: Number(item.quoted_price ?? 0),
-    priority: "Standard", status: cleanerId ? (status === "in_progress" ? "In Progress" : status === "completed" ? "Completed" : "Assigned") : "Unassigned",
+    currency: String(item.currency ?? "KES"), priority: "Standard", status: displayStatus,
     cleanerId, notes: String(item.special_instructions ?? ""),
   };
+}
+
+function timelineLanes(jobs: Job[]) {
+  const layout = new Map<string, { lane: number; lanes: number }>();
+  const ordered = [...jobs].sort((a, b) => a.start - b.start || a.duration - b.duration);
+  let group: Job[] = [];
+  let groupEnd = -Infinity;
+  const placeGroup = () => {
+    if (!group.length) return;
+    const active: Array<{ end: number; lane: number }> = [];
+    const lanes = new Map<string, number>();
+    let laneCount = 0;
+    group.forEach((job) => {
+      const start = job.start;
+      for (let index = active.length - 1; index >= 0; index -= 1) if (active[index].end <= start) active.splice(index, 1);
+      const occupied = new Set(active.map((entry) => entry.lane));
+      let lane = 0;
+      while (occupied.has(lane)) lane += 1;
+      active.push({ end: job.start + job.duration, lane });
+      lanes.set(job.id, lane);
+      laneCount = Math.max(laneCount, lane + 1);
+    });
+    group.forEach((job) => layout.set(job.id, { lane: lanes.get(job.id) ?? 0, lanes: laneCount }));
+  };
+  ordered.forEach((job) => {
+    if (group.length && job.start >= groupEnd) { placeGroup(); group = []; groupEnd = -Infinity; }
+    group.push(job);
+    groupEnd = Math.max(groupEnd, job.start + job.duration);
+  });
+  placeGroup();
+  return layout;
 }
 
 function DispatchPage() {
   const { can } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [cleaners, setCleaners] = useState<Array<{ id: string; name: string; zone: string; availability: string; rating?: string | number | null }>>([]);
+  const [cleaners, setCleaners] = useState<Array<{ id: string; name: string; zone: string; availability: string; rating?: string | number | null; skills: string[] }>>([]);
   const [view, setView] = useState<"timeline" | "board" | "list">("timeline");
   const [query, setQuery] = useState("");
   const [zone, setZone] = useState("all");
   const [selected, setSelected] = useState<Job | null>(null);
-  const [matches, setMatches] = useState<Array<{ id: string; name: string; zone: string; availability: string; rating: string | number | null; distance?: number | null; workload?: number }>>([]);
+  const [cleanerPickerOpen, setCleanerPickerOpen] = useState(false);
+  const [selectedCleanerId, setSelectedCleanerId] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [dayOffset, setDayOffset] = useState(0);
   const day = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + dayOffset);
 
   useEffect(() => {
     if (!can("bookings.read")) return;
-    const startDate = day.toISOString().slice(0, 10);
+    const startDate = localDateKey(day);
     Promise.all([bookingsApi.dispatchCalendar({ start_date: startDate, end_date: startDate }), bookingsApi.list({ assignment_status: "awaiting_assignment", start_date: startDate, end_date: startDate, limit: 200 }), can("cleaners.read") ? cleanersApi.list({ status: "active" }) : Promise.resolve([])]).then(([events, queue, profiles]) => {
       const calendarJobs = events.map(toJob);
       const queueJobs = queue.map(toJob);
       setJobs([...calendarJobs, ...queueJobs.filter((queued) => !calendarJobs.some((job) => job.id === queued.id))]);
-        setCleaners((profiles as Array<Record<string, unknown>>).map((cleaner) => ({ id: String(cleaner.id), name: String(cleaner.full_name), zone: String(cleaner.service_area ?? ""), availability: cleaner.is_available ? "Available" : "Unavailable", rating: cleaner.rating as string | number | null })));
+        setCleaners(profiles.map((cleaner) => ({ id: cleaner.id, name: cleaner.full_name, zone: cleaner.service_area, availability: cleaner.is_available ? "Available" : "Unavailable", rating: cleaner.rating, skills: cleaner.skills.map((skill) => skill.name) })));
     }).catch((cause) => toast.error(cause instanceof Error ? cause.message : "Unable to load dispatch data."));
   }, [dayOffset, can, refreshKey]);
 
-  useEffect(() => {
-    if (!selected || !can("bookings.assign") || !["Unassigned", "Assigned"].includes(selected.status)) { setMatches([]); return; }
-    bookingsApi.matches(selected.id).then((items) => setMatches(items.map((item) => ({ id: item.cleaner_id, name: item.full_name, zone: item.service_area, availability: "Available", rating: item.rating ?? "—", distance: item.distance_km, workload: item.current_assignments })))).catch((cause) => toast.error(cause instanceof Error ? cause.message : "Unable to load cleaner matches."));
-  }, [selected?.id, selected?.cleanerId, can]);
-
   const zones = useMemo(() => Array.from(new Set(cleaners.map((c) => c.zone))), []);
+  const selectedCleaner = cleaners.find((cleaner) => cleaner.id === selectedCleanerId);
+
+  useEffect(() => {
+    setSelectedCleanerId(selected?.cleanerId ?? "");
+    setCleanerPickerOpen(false);
+  }, [selected?.id, selected?.cleanerId]);
 
   const visible = useMemo(
     () =>
@@ -288,23 +348,11 @@ function DispatchPage() {
     const cleaner = cleaners.find((c) => c.id === cleanerId);
     try { const updated = await bookingsApi.assignCleaner(jobId, cleanerId, job.cleanerId ? "Reassigned from Dispatch Calendar." : "Assigned from Dispatch Calendar.");
     toast.success(
-      `${job.id} assigned to ${cleaner?.name ?? "cleaner"}`,
+      `${job.service} assigned to ${cleaner?.name ?? "cleaner"}`,
       {
         description: `${job.service} · starts ${job.start}:00`,
       },
     ); setSelected(toJob(updated)); setRefreshKey((key) => key + 1); } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Unable to assign cleaner."); setRefreshKey((key) => key + 1); }
-  }
-
-  async function autoAssign() {
-    if (!can("bookings.assign")) { toast.error("You do not have permission to dispatch cleaners."); return; }
-    const awaiting = unassigned;
-    if (!awaiting.length) { toast("No jobs are waiting for assignment."); return; }
-    const results = await Promise.allSettled(awaiting.map((job) => bookingsApi.autoDispatch(job.id)));
-    const assigned = results.filter((result) => result.status === "fulfilled").length;
-    const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (assigned) toast.success(`Auto-dispatch assigned ${assigned} job${assigned === 1 ? "" : "s"}.`);
-    if (rejected) toast.error(rejected.reason instanceof Error ? rejected.reason.message : "Some jobs need manual review.");
-    setRefreshKey((key) => key + 1);
   }
 
   useEffect(() => {
@@ -416,9 +464,6 @@ function DispatchPage() {
             ))}
           </div>
 
-          <Button size="sm" className="h-8" onClick={() => void autoAssign()} disabled={!can("bookings.assign") || !unassigned.length}>
-            <Zap className="h-3.5 w-3.5 mr-1" /> Auto-dispatch
-          </Button>
         </div>
 
         <div className="flex-1 flex min-h-0">
@@ -469,6 +514,7 @@ function DispatchPage() {
                 </div>
                 {cleaners.map((c) => {
                   const row = visible.filter((j) => j.cleanerId === c.id);
+                  const laneLayout = timelineLanes(row);
                   return (
                     <div key={c.id} className="flex border-b group">
                       <div className="w-52 shrink-0 px-4 py-3 flex items-center gap-2">
@@ -492,13 +538,16 @@ function DispatchPage() {
                             className="shrink-0 border-l group-hover:bg-muted/30"
                           />
                         ))}
-                        {row.map((j) => (
+                        {row.map((j) => {
+                          const placement = laneLayout.get(j.id) ?? { lane: 0, lanes: 1 };
+                          const slotWidth = (j.duration * COL - 8) / placement.lanes;
+                          return (
                           <button
                             key={j.id}
                             onClick={() => setSelected(j)}
                             style={{
-                              left: (j.start - HOURS[0]) * COL + 4,
-                              width: j.duration * COL - 8,
+                              left: (j.start - HOURS[0]) * COL + 4 + placement.lane * slotWidth,
+                              width: Math.max(28, slotWidth - 4),
                             }}
                             className={`absolute top-2 bottom-2 rounded-md border px-2 py-1 text-left text-xs overflow-hidden ${statusTone[j.status]} ${conflicts.has(j.id) ? "ring-2 ring-destructive" : ""} hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing`}
                           >
@@ -507,7 +556,8 @@ function DispatchPage() {
                               {j.customer} · {j.start}:00
                             </div>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -550,7 +600,6 @@ function DispatchPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
                       <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                        <th className="px-4 py-2">Job</th>
                         <th className="px-4 py-2">Service</th>
                         <th className="px-4 py-2">Customer</th>
                         <th className="px-4 py-2">Zone</th>
@@ -566,7 +615,6 @@ function DispatchPage() {
                           className="hover:bg-muted/40 cursor-pointer"
                           onClick={() => setSelected(j)}
                         >
-                          <td className="px-4 py-2.5 font-medium">{j.id}</td>
                           <td className="px-4 py-2.5">{j.service}</td>
                           <td className="px-4 py-2.5">{j.customer}</td>
                           <td className="px-4 py-2.5 text-muted-foreground">{j.zone}</td>
@@ -607,11 +655,16 @@ function DispatchPage() {
                   </span>
                 </SheetTitle>
                 <SheetDescription>
-                  {selected.id} · KES {selected.amount.toLocaleString()}
+                  {selected.currency} {selected.amount.toLocaleString()}
                 </SheetDescription>
               </SheetHeader>
               <div className="px-4 pb-6 space-y-4 text-sm">
                 <Row icon={User} label="Customer" value={selected.customer} />
+                <Row
+                  icon={Sparkles}
+                  label="Booking"
+                  value={[selected.service, selected.packageName, selected.propertyType].filter(Boolean).join(" · ")}
+                />
                 <Row
                   icon={MapPin}
                   label="Address"
@@ -627,35 +680,82 @@ function DispatchPage() {
                   <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
                     {selected.cleanerId ? "Reassign cleaner" : "Assign cleaner"}
                   </div>
-                  <div className="space-y-1.5">
-                    {matches.map((c) => (
-                      <button
-                        key={c.id}
-                        disabled={!can("bookings.assign")}
-                        onClick={() => {
-                          void assign(selected.id, c.id);
-                        }}
-                        className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-left hover:bg-muted ${selected.cleanerId === c.id ? "border-primary bg-primary/10" : ""}`}
+                  <Popover open={cleanerPickerOpen} onOpenChange={setCleanerPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={cleanerPickerOpen}
+                        className="w-full justify-between font-normal"
                       >
-                        <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-[10px]">
-                            {initials(c.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate">{c.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{c.zone} · ★ {c.rating}{"distance" in c && c.distance != null ? ` · ${c.distance.toFixed(1)} km` : ""}{"workload" in c ? ` · ${c.workload ?? 0} active jobs` : ""}</div>
-                        </div>
-                        <Badge
-                          variant={c.availability === "Available" ? "secondary" : "outline"}
-                          className="text-[10px]"
-                        >
-                          {c.availability}
-                        </Badge>
-                      </button>
-                    ))}
-                    {!matches.length && <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No eligible cleaners were found for this booking. Try again after updating availability or service area.</p>}
-                  </div>
+                        <span className="truncate">
+                          {selectedCleaner
+                            ? `${selectedCleaner.name} · ${selectedCleaner.zone}`
+                            : "Search and select a cleaner"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-[var(--radix-popover-trigger-width)] p-0"
+                      align="start"
+                    >
+                      <Command>
+                        <CommandInput placeholder="Search cleaner, area, or skill..." />
+                        <CommandList>
+                          <CommandEmpty>No cleaners match your search.</CommandEmpty>
+                          <CommandGroup>
+                            {cleaners.map((cleaner) => (
+                              <CommandItem
+                                key={cleaner.id}
+                                value={`${cleaner.name} ${cleaner.zone} ${cleaner.skills.join(" ")}`}
+                                disabled={cleaner.availability !== "Available"}
+                                onSelect={() => {
+                                  setSelectedCleanerId(cleaner.id);
+                                  setCleanerPickerOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={`h-4 w-4 ${selectedCleanerId === cleaner.id ? "opacity-100" : "opacity-0"}`}
+                                />
+                                <Avatar className="h-7 w-7">
+                                  <AvatarFallback className="text-[10px]">
+                                    {initials(cleaner.name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium">{cleaner.name}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground">
+                                    {cleaner.zone} · ★ {cleaner.rating ?? "—"}
+                                    {cleaner.skills.length
+                                      ? ` · ${cleaner.skills.join(", ")}`
+                                      : " · No skills listed"}
+                                  </div>
+                                </div>
+                                <Badge
+                                  variant={cleaner.availability === "Available" ? "secondary" : "outline"}
+                                  className="text-[10px]"
+                                >
+                                  {cleaner.availability}
+                                </Badge>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    className="mt-2 w-full"
+                    disabled={
+                      !can("bookings.assign") ||
+                      !selectedCleaner ||
+                      selectedCleaner.availability !== "Available"
+                    }
+                    onClick={() => void assign(selected.id, selectedCleanerId)}
+                  >
+                    {selected.cleanerId ? "Reassign cleaner" : "Assign cleaner"}
+                  </Button>
                 </div>
                 <Separator />
                 <div>
@@ -705,6 +805,11 @@ function JobCard({
           {job.priority}
         </span>
       </div>
+      {(job.packageName || job.propertyType) && (
+        <div className="mb-1 truncate text-[11px] text-muted-foreground">
+          {[job.packageName, job.propertyType].filter(Boolean).join(" · ")}
+        </div>
+      )}
       <div className="text-xs text-muted-foreground truncate">{job.customer}</div>
       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1">

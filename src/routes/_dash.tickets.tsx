@@ -1,35 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { tickets } from "@/lib/mock-data";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supportTicketsApi, usersApi, type ApiUser, type SupportTicket } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_dash/tickets")({ component: TicketsPage });
+const statuses = ["open", "in_progress", "resolved", "closed"] as const;
+const priorityVariant = (priority: string) => priority === "urgent" ? "destructive" : priority === "high" ? "default" : "secondary";
 
 function TicketsPage() {
-  return (
-    <div>
-      <PageHeader title="Support Tickets" description="Customer and cleaner inquiries." actions={<Button>New ticket</Button>} />
-      <div className="grid gap-3">
-        {tickets.map((t) => (
-          <Card key={t.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{t.id}</span>
-                <Badge variant={t.priority === "High" ? "destructive" : "secondary"}>{t.priority}</Badge>
-                <Badge variant="outline">{t.status}</Badge>
-              </div>
-              <div className="font-medium mt-1">{t.subject}</div>
-              <div className="text-xs text-muted-foreground">{t.customer} · updated {t.updated}</div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm">Refund</Button>
-              <Button size="sm">Reply</Button>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+  const { can } = useAuth();
+  const [status, setStatus] = useState<SupportTicket["status"]>("open"); const [tickets, setTickets] = useState<SupportTicket[]>([]); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [selected, setSelected] = useState<SupportTicket | null>(null); const [staff, setStaff] = useState<ApiUser[]>([]); const [assignee, setAssignee] = useState(""); const [saving, setSaving] = useState(false);
+  const load = async () => { if (!can("complaints.read")) return; try { setLoading(true); setError(null); setTickets(await supportTicketsApi.list(status)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load support tickets."); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, [status]);
+  const update = async (ticket: SupportTicket, body: Parameters<typeof supportTicketsApi.update>[1]) => { try { setSaving(true); await supportTicketsApi.update(ticket.id, body); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update ticket."); } finally { setSaving(false); } };
+  const openAssign = async (ticket: SupportTicket) => { setSelected(ticket); setAssignee(ticket.assigned_to_user_id ?? ""); if (can("users.read")) { try { setStaff(await usersApi.list("staff")); } catch { setStaff([]); } } };
+  const assign = async () => { if (!selected || !assignee.trim()) return; await update(selected, { assigned_to_user_id: assignee.trim() }); setSelected(null); };
+  if (!can("complaints.read")) return <div className="text-sm text-muted-foreground">You do not have permission to view support tickets.</div>;
+  return <div className="space-y-6"><PageHeader title="Support Tickets" description="Assign, work, resolve, and close customer support requests." />{error && <p className="text-sm text-destructive">{error}</p>}<Tabs value={status} onValueChange={(value) => setStatus(value as SupportTicket["status"])}><TabsList className="h-auto flex-wrap justify-start gap-1">{statuses.map((item) => <TabsTrigger key={item} value={item}>{item.replaceAll("_", " ")}</TabsTrigger>)}</TabsList></Tabs><div className="grid gap-3">{tickets.map((ticket) => <Card key={ticket.id} className="p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{ticket.id}</span><Badge variant={priorityVariant(ticket.priority)}>{ticket.priority}</Badge><Badge variant="outline">{ticket.category}</Badge><Badge variant="secondary">{ticket.status.replaceAll("_", " ")}</Badge></div><h2 className="font-medium">{ticket.subject}</h2><p className="mt-1 text-sm text-muted-foreground">{ticket.description}</p><div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>Customer: {ticket.customer_name}</span><span>Booking: {ticket.booking_id ?? "—"}</span><span>Assignee: {ticket.assigned_to_user_id ?? "Unassigned"}</span><span>Updated {new Date(ticket.updated_at).toLocaleString()}</span></div></div><div className="flex flex-wrap gap-2">{can("complaints.assign") && <Button variant="outline" size="sm" onClick={() => openAssign(ticket)}>Assign</Button>}{ticket.status === "open" && can("complaints.update") && <Button size="sm" disabled={saving} onClick={() => update(ticket, { status: "in_progress" })}>Start work</Button>}{(ticket.status === "open" || ticket.status === "in_progress") && can("complaints.resolve") && <Button size="sm" disabled={saving} onClick={() => update(ticket, { status: "resolved" })}>Resolve</Button>}{ticket.status === "resolved" && can("complaints.resolve") && <Button size="sm" variant="outline" disabled={saving} onClick={() => update(ticket, { status: "closed" })}>Close</Button>}</div></div></Card>)}{loading && <Card className="p-8 text-center text-sm text-muted-foreground">Loading tickets…</Card>}{!loading && !tickets.length && <Card className="p-8 text-center text-sm text-muted-foreground">No {status.replaceAll("_", " ")} tickets.</Card>}</div><Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}><DialogContent><DialogHeader><DialogTitle>Assign support ticket</DialogTitle><DialogDescription>Choose a support staff member or enter their user ID.</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="ticket-assignee">Support staff</Label>{staff.length ? <Select value={assignee} onValueChange={setAssignee}><SelectTrigger id="ticket-assignee"><SelectValue placeholder="Choose staff member" /></SelectTrigger><SelectContent>{staff.map((user) => <SelectItem key={user.id} value={user.id}>{user.full_name} · {user.role.name}</SelectItem>)}</SelectContent></Select> : <Input id="ticket-assignee" value={assignee} onChange={(event) => setAssignee(event.target.value)} placeholder="Staff user UUID" />}</div><DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button><Button disabled={!assignee.trim() || saving} onClick={assign}>Assign</Button></DialogFooter></DialogContent></Dialog></div>;
 }

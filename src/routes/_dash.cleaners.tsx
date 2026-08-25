@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CalendarDays, MapPin, Plus, Power, RefreshCw } from "lucide-react";
+import { CalendarDays, MapPin, Plus, Power, RefreshCw, Settings2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -24,28 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { cleanersApi } from "@/lib/api";
+import { cleanersApi, servicesApi, type Cleaner, type CleanerSkill, type Service } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash/cleaners")({ component: CleanersPage });
 
-type Cleaner = {
-  id: string;
-  full_name: string;
-  email?: string | null;
-  phone: string;
-  national_id: string;
-  service_area: string;
-  skills: string[];
-  status: "active" | "inactive" | "suspended";
-  is_available: boolean;
-  current_latitude: number | null;
-  current_longitude: number | null;
-  rating: string | number | null;
-  notes: string | null;
-  created_at?: string;
-  stats?: Record<string, number | string>;
-  recent_reviews?: Array<{ rating: number; review: string | null; created_at: string }>;
-};
 type Shift = {
   id: string;
   starts_at: string;
@@ -59,7 +43,7 @@ type CleanerForm = {
   phone: string;
   national_id: string;
   service_area: string;
-  skills: string;
+  skill_ids: string[];
   status: Cleaner["status"];
   is_available: boolean;
   current_latitude: string;
@@ -71,7 +55,7 @@ const blankForm: CleanerForm = {
   phone: "",
   national_id: "",
   service_area: "",
-  skills: "",
+  skill_ids: [],
   status: "active",
   is_available: true,
   current_latitude: "",
@@ -83,7 +67,7 @@ const toForm = (cleaner: Cleaner): CleanerForm => ({
   phone: cleaner.phone,
   national_id: cleaner.national_id,
   service_area: cleaner.service_area,
-  skills: cleaner.skills.join(", "),
+  skill_ids: cleaner.skill_ids,
   status: cleaner.status,
   is_available: cleaner.is_available,
   current_latitude: cleaner.current_latitude?.toString() ?? "",
@@ -104,10 +88,7 @@ function formPayload(form: CleanerForm) {
     phone: form.phone,
     national_id: form.national_id,
     service_area: form.service_area,
-    skills: form.skills
-      .split(",")
-      .map((skill) => skill.trim())
-      .filter(Boolean),
+    skill_ids: form.skill_ids,
     status: form.status,
     is_available: form.is_available,
     ...(form.current_latitude
@@ -123,13 +104,19 @@ function formPayload(form: CleanerForm) {
 function CleanersPage() {
   const { can } = useAuth();
   const [cleaners, setCleaners] = useState<Cleaner[]>([]);
+  const [skills, setSkills] = useState<CleanerSkill[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<Cleaner | null>(null);
   const [form, setForm] = useState<CleanerForm>(blankForm);
-  const [mode, setMode] = useState<"create" | "edit" | "availability" | "shifts" | null>(null);
+  const [mode, setMode] = useState<"profile" | "create" | "edit" | "availability" | "shifts" | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [availability, setAvailability] = useState("all");
   const [serviceArea, setServiceArea] = useState("");
+  const [skillFilter, setSkillFilter] = useState("all");
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<CleanerSkill | null>(null);
+  const [skillForm, setSkillForm] = useState({ name: "", description: "", service_ids: [] as string[] });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -148,23 +135,35 @@ function CleanersPage() {
         ...(status !== "all" ? { status } : {}),
         ...(availability !== "all" ? { is_available: availability === "available" } : {}),
         ...(serviceArea ? { service_area: serviceArea } : {}),
+        ...(skillFilter !== "all" ? { skill_id: skillFilter } : {}),
         ...(search.trim().length >= 2 ? { search: search.trim() } : {}),
       });
-      setCleaners(data as Cleaner[]);
+      setCleaners(data);
       setPage(1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load cleaners.");
     }
   };
-  useEffect(() => {
-    void load();
-  }, []);
+  const loadSkills = async () => {
+    try {
+      const [skillItems, serviceItems] = await Promise.all([
+        cleanersApi.skills(true),
+        servicesApi.list(true),
+      ]);
+      setSkills(skillItems);
+      setServices(serviceItems);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to load cleaner skills.");
+    }
+  };
+  useEffect(() => { void Promise.all([load(), loadSkills()]); }, []);
 
   const view = async (cleaner: Cleaner) => {
     try {
       setError(null);
-      const data = (await cleanersApi.get(cleaner.id)) as Cleaner;
+      const data = await cleanersApi.get(cleaner.id);
       setSelected(data);
+      setMode("profile");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load this cleaner profile.");
     }
@@ -257,6 +256,29 @@ function CleanersPage() {
     setForm(blankForm);
     setMode("create");
   };
+  const openSkillManager = () => {
+    setEditingSkill(null);
+    setSkillForm({ name: "", description: "", service_ids: [] });
+    setSkillsOpen(true);
+  };
+  const editSkill = (skill: CleanerSkill) => {
+    setEditingSkill(skill);
+    setSkillForm({ name: skill.name, description: skill.description ?? "", service_ids: skill.service_ids });
+  };
+  const saveSkill = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      if (!skillForm.service_ids.length) throw new Error("Select at least one service for this skill.");
+      const payload = { name: skillForm.name, description: skillForm.description || undefined, service_ids: skillForm.service_ids };
+      if (editingSkill) await cleanersApi.updateSkill(editingSkill.id, payload);
+      else await cleanersApi.createSkill(payload);
+      setEditingSkill(null);
+      setSkillForm({ name: "", description: "", service_ids: [] });
+      await Promise.all([loadSkills(), load()]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save cleaner skill.");
+    }
+  };
   const openEdit = (cleaner: Cleaner) => {
     setForm(toForm(cleaner));
     setMode("edit");
@@ -279,6 +301,7 @@ function CleanersPage() {
               <RefreshCw className="mr-2 size-4" />
               Refresh
             </Button>
+            {can("cleaners.read") && <Button variant="outline" onClick={openSkillManager}><Settings2 className="mr-2 size-4" />Manage skills</Button>}
             {can("cleaners.create") && (
               <Button onClick={openCreate}>
                 <Plus className="mr-2 size-4" />
@@ -324,6 +347,10 @@ function CleanersPage() {
               <SelectItem value="unavailable">Unavailable</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={skillFilter} onValueChange={setSkillFilter}>
+            <SelectTrigger className="w-52"><SelectValue placeholder="All skills" /></SelectTrigger>
+            <SelectContent><SelectItem value="all">All skills</SelectItem>{skills.filter((skill) => skill.is_active).map((skill) => <SelectItem key={skill.id} value={skill.id}>{skill.name}</SelectItem>)}</SelectContent>
+          </Select>
           <Button onClick={() => void load()}>Apply filters</Button>
         </div>
         <Table>
@@ -331,7 +358,6 @@ function CleanersPage() {
             <TableRow>
               <TableHead className="w-14">#</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>Status</TableHead>
@@ -343,7 +369,6 @@ function CleanersPage() {
               <TableRow key={cleaner.id}>
                 <TableCell className="font-mono text-xs text-muted-foreground">{String((page - 1) * pageSize + index + 1).padStart(2, "0")}</TableCell>
                 <TableCell className="font-medium">{cleaner.full_name}</TableCell>
-                <TableCell>{cleaner.email ?? "—"}</TableCell>
                 <TableCell>{cleaner.phone}</TableCell>
                 <TableCell>{cleaner.service_area || "—"}</TableCell>
                 <TableCell>
@@ -369,7 +394,7 @@ function CleanersPage() {
             ))}
             {!cleaners.length && (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
                   No cleaner profiles found.
                 </TableCell>
               </TableRow>
@@ -395,7 +420,7 @@ function CleanersPage() {
                     ? "Live availability"
                     : mode === "shifts"
                       ? "Cleaner shifts"
-                      : "Cleaner profile"}
+                      : selected?.full_name || "Cleaner profile"}
             </DialogTitle>
           </DialogHeader>
           {mode === "create" || mode === "edit" ? (
@@ -404,6 +429,7 @@ function CleanersPage() {
               setForm={setForm}
               onSubmit={save}
               submitLabel={mode === "create" ? "Create cleaner" : "Save changes"}
+              skills={skills.filter((skill) => skill.is_active || form.skill_ids.includes(skill.id))}
             />
           ) : mode === "availability" ? (
             <AvailabilityForm form={form} setForm={setForm} onSubmit={saveAvailability} />
@@ -437,6 +463,21 @@ function CleanersPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+      <Dialog open={skillsOpen} onOpenChange={setSkillsOpen}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Cleaner skills & service mapping</DialogTitle></DialogHeader>
+          <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+            {(can("cleaners.create") || can("cleaners.update")) && <form className="space-y-4 rounded-lg border p-4" onSubmit={saveSkill}>
+              <h3 className="font-medium">{editingSkill ? "Edit skill" : "Create skill"}</h3>
+              <Field label="Skill name"><Input value={skillForm.name} onChange={(event) => setSkillForm({ ...skillForm, name: event.target.value })} required /></Field>
+              <Field label="Description"><Input value={skillForm.description} onChange={(event) => setSkillForm({ ...skillForm, description: event.target.value })} /></Field>
+              <Field label="Services this skill can deliver"><MultiSelect options={services.map((service) => ({ id: service.id, label: service.name, disabled: !service.is_active }))} selected={skillForm.service_ids} onChange={(service_ids) => setSkillForm({ ...skillForm, service_ids })} /></Field>
+              <div className="flex gap-2"><Button>{editingSkill ? "Save skill" : "Create skill"}</Button>{editingSkill && <Button type="button" variant="outline" onClick={() => { setEditingSkill(null); setSkillForm({ name: "", description: "", service_ids: [] }); }}>Cancel</Button>}</div>
+            </form>}
+            <div className="space-y-2">{skills.map((skill) => <div key={skill.id} className="rounded-lg border p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{skill.name}</p><p className="text-sm text-muted-foreground">{skill.description || "No description"}</p><div className="mt-2 flex flex-wrap gap-1">{skill.services.map((service) => <Badge key={service.id} variant="outline">{service.name}</Badge>)}</div></div><Badge variant={skill.is_active ? "success" : "secondary"}>{skill.is_active ? "Active" : "Inactive"}</Badge></div><div className="mt-3 flex gap-2">{can("cleaners.update") && <Button size="sm" variant="outline" onClick={() => editSkill(skill)}>Edit</Button>}{can("cleaners.delete") && skill.is_active && <Button size="sm" variant="destructive" onClick={async () => { if (!window.confirm(`Deactivate ${skill.name}?`)) return; await cleanersApi.deactivateSkill(skill.id); await Promise.all([loadSkills(), load()]); }}>Deactivate</Button>}</div></div>)}</div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -446,99 +487,28 @@ function CleanerForm({
   setForm,
   onSubmit,
   submitLabel,
+  skills,
 }: {
   form: CleanerForm;
   setForm: (form: CleanerForm) => void;
   onSubmit: (event: FormEvent) => void;
   submitLabel: string;
+  skills: CleanerSkill[];
 }) {
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
-      <Field label="Full name">
-        <Input
-          value={form.full_name}
-          onChange={(event) => setForm({ ...form, full_name: event.target.value })}
-          required
-        />
-      </Field>
-      <Field label="Phone">
-        <Input
-          value={form.phone}
-          onChange={(event) => setForm({ ...form, phone: event.target.value })}
-          required
-        />
-      </Field>
-      <Field label="National ID">
-        <Input
-          value={form.national_id}
-          onChange={(event) => setForm({ ...form, national_id: event.target.value })}
-          required
-        />
-      </Field>
-      <Field label="Service area">
-        <Input
-          value={form.service_area}
-          onChange={(event) => setForm({ ...form, service_area: event.target.value })}
-          required
-        />
-      </Field>
-      <Field label="Skills">
-        <Input
-          value={form.skills}
-          onChange={(event) => setForm({ ...form, skills: event.target.value })}
-          placeholder="House cleaning, deep cleaning"
-        />
-      </Field>
-      <Field label="Status">
-        <Select
-          value={form.status}
-          onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="suspended">Suspended</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label="Latitude">
-        <Input
-          type="number"
-          step="any"
-          value={form.current_latitude}
-          onChange={(event) => setForm({ ...form, current_latitude: event.target.value })}
-        />
-      </Field>
-      <Field label="Longitude">
-        <Input
-          type="number"
-          step="any"
-          value={form.current_longitude}
-          onChange={(event) => setForm({ ...form, current_longitude: event.target.value })}
-        />
-      </Field>
-      <div className="sm:col-span-2">
-        <Field label="Notes">
-          <Input
-            value={form.notes}
-            onChange={(event) => setForm({ ...form, notes: event.target.value })}
-          />
-        </Field>
+    <form className="space-y-5" onSubmit={onSubmit}>
+      <p className="text-sm text-muted-foreground">Fields marked * are required. Add skills to make the cleaner eligible for matching.</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Full name *"><Input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="e.g. Amina Wanjiku" required /></Field>
+        <Field label="Phone number *"><Input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="+254 7XX XXX XXX" required /></Field>
+        <Field label="National ID *"><Input value={form.national_id} onChange={(event) => setForm({ ...form, national_id: event.target.value })} placeholder="Official ID number" required /></Field>
+        <Field label="Service area *"><Input value={form.service_area} onChange={(event) => setForm({ ...form, service_area: event.target.value })} placeholder="e.g. Westlands, Nairobi" required /></Field>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={form.is_available}
-          onChange={(event) => setForm({ ...form, is_available: event.target.checked })}
-        />
-        Available for assignment
-      </label>
-      <div className="flex items-end justify-end">
-        <Button>{submitLabel}</Button>
-      </div>
+      <div className="border-t pt-5"><div className="mb-3 flex items-center justify-between"><div><h3 className="font-medium">Skills</h3><p className="text-xs text-muted-foreground">Select services this cleaner can deliver.</p></div>{form.skill_ids.length > 0 && <Badge variant="secondary">{form.skill_ids.length} selected</Badge>}</div><MultiSelect options={skills.map((skill) => ({ id: skill.id, label: skill.name, disabled: !skill.is_active }))} selected={form.skill_ids} onChange={(skill_ids) => setForm({ ...form, skill_ids })} emptyLabel="No active skills. Create one from Manage skills." /></div>
+      <div className="grid gap-4 border-t pt-5 sm:grid-cols-2"><Field label="Status"><Select value={form.status} onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent></Select></Field><label className="flex items-center gap-3 pt-6 text-sm"><Checkbox checked={form.is_available} onCheckedChange={(is_available) => setForm({ ...form, is_available: Boolean(is_available) })} /><span><span className="font-medium">Available for assignment</span><span className="block text-xs text-muted-foreground">Include in dispatch matching now</span></span></label></div>
+      <div className="border-t pt-5"><div className="mb-3"><h3 className="font-medium">Location <span className="font-normal text-muted-foreground">(optional)</span></h3><p className="text-xs text-muted-foreground">Enter both coordinates for proximity matching.</p></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Latitude"><Input type="number" step="any" value={form.current_latitude} onChange={(event) => setForm({ ...form, current_latitude: event.target.value })} placeholder="-1.286389" /></Field><Field label="Longitude"><Input type="number" step="any" value={form.current_longitude} onChange={(event) => setForm({ ...form, current_longitude: event.target.value })} placeholder="36.817223" /></Field></div></div>
+      <Field label="Internal notes"><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Optional onboarding or operations note" /></Field>
+      <div className="flex justify-end border-t pt-4"><Button>{submitLabel}</Button></div>
     </form>
   );
 }
@@ -604,7 +574,10 @@ function CleanerProfile({
   onDeactivate: () => void;
   onReactivate: () => void;
 }) {
-  const stats = cleaner.stats ?? {};
+  const earnings = cleaner.stats?.total_earnings_by_currency ?? {};
+  const earningsLabel = Object.entries(earnings).length
+    ? Object.entries(earnings).map(([currency, amount]) => `${currency} ${Number(amount).toLocaleString()}`).join(" · ")
+    : "KES 0";
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -633,16 +606,19 @@ function CleanerProfile({
             : "Location not provided"}
         </p>
       </div>
-      {Object.keys(stats).length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {Object.entries(stats).map(([label, value]) => (
-            <div key={label} className="rounded-md bg-muted p-3">
-              <p className="text-xs text-muted-foreground">{label.replaceAll("_", " ")}</p>
-              <p className="mt-1 font-semibold">{value}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="rounded-lg border p-3">
+        <p className="text-sm font-medium">Skills & deliverable services</p>
+        <div className="mt-2 space-y-2">{cleaner.skills.map((skill) => <div key={skill.id}><Badge variant="outline">{skill.name}</Badge><p className="mt-1 text-xs text-muted-foreground">{skill.services.map((service) => service.name).join(", ") || "No services mapped"}</p></div>)}{!cleaner.skills.length && <p className="text-sm text-muted-foreground">No skills selected. This cleaner cannot be matched to bookings yet.</p>}</div>
+      </div>
+      {cleaner.stats && <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[["Total jobs", cleaner.stats.total_sessions], ["Completed", cleaner.stats.completed_sessions], ["Total earnings", earningsLabel], ["Rating", `${cleaner.stats.average_rating} / 5`]].map(([label, value]) => <div key={String(label)} className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value}</p></div>)}
+      </div>}
+      <Tabs defaultValue="jobs">
+        <TabsList className="grid w-full grid-cols-3"><TabsTrigger value="jobs">Jobs ({cleaner.job_history?.length ?? 0})</TabsTrigger><TabsTrigger value="payouts">Payouts ({cleaner.payout_history?.length ?? 0})</TabsTrigger><TabsTrigger value="audit">Audit ({cleaner.audit_history?.length ?? 0})</TabsTrigger></TabsList>
+        <TabsContent value="jobs" className="mt-3 space-y-2">{cleaner.job_history?.map((job) => <div key={job.booking_id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{job.service_name}{job.package_name ? ` · ${job.package_name}` : ""}</p><p className="text-xs text-muted-foreground">{new Date(job.scheduled_for).toLocaleString()}</p></div><Badge variant="secondary">{job.status.replaceAll("_", " ")}</Badge></div><p className="mt-2 flex items-center gap-1 text-muted-foreground"><MapPin className="size-3" />{[job.address_line, job.city].filter(Boolean).join(", ")}</p><p className="mt-1 text-xs text-muted-foreground">Booking {job.booking_id} · {job.currency} {Number(job.quoted_price).toLocaleString()}</p></div>)}{!cleaner.job_history?.length && <EmptyHistory label="No jobs recorded for this cleaner." />}</TabsContent>
+        <TabsContent value="payouts" className="mt-3 space-y-2">{cleaner.payout_history?.map((payout) => <div key={payout.payout_id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{payout.currency} {Number(payout.amount).toLocaleString()}</p><p className="text-xs text-muted-foreground">{payout.provider_reference || `Payout ${payout.payout_id}`}</p></div><Badge variant={payout.status === "paid" ? "success" : "secondary"}>{payout.status}</Badge></div><p className="mt-2 text-xs text-muted-foreground">Booking {payout.booking_id} · {new Date(payout.paid_at || payout.created_at).toLocaleString()}</p>{payout.note && <p className="mt-1 text-muted-foreground">{payout.note}</p>}</div>)}{!cleaner.payout_history?.length && <EmptyHistory label="No payouts recorded for this cleaner." />}</TabsContent>
+        <TabsContent value="audit" className="mt-3 space-y-2">{cleaner.audit_history?.map((event) => <div key={event.id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><p className="font-medium">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p><span className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-muted-foreground">By {event.actor_email || event.actor_user_id || "System"}</p>{event.details && <p className="mt-1 break-words text-xs text-muted-foreground">{JSON.stringify(event.details)}</p>}</div>)}{!cleaner.audit_history?.length && <EmptyHistory label="No cleaner audit events recorded yet." />}</TabsContent>
+      </Tabs>
       {cleaner.recent_reviews?.length ? (
         <div>
           <h3 className="mb-2 font-medium">Recent reviews</h3>
@@ -781,11 +757,36 @@ function ShiftManager({
     </div>
   );
 }
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div>
       <Label>{label}</Label>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       <div className="mt-1">{children}</div>
     </div>
   );
+}
+
+function EmptyHistory({ label }: { label: string }) {
+  return <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{label}</p>;
+}
+
+function MultiSelect({
+  options,
+  selected,
+  onChange,
+  emptyLabel = "No options available.",
+}: {
+  options: Array<{ id: string; label: string; disabled?: boolean }>;
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  emptyLabel?: string;
+}) {
+  if (!options.length) return <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{emptyLabel}</p>;
+  const selectableIds = options.filter((option) => !option.disabled || selected.includes(option.id)).map((option) => option.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.includes(id));
+  return <div className="rounded-md border"><div className="flex items-center justify-between border-b px-3 py-2"><span className="text-xs text-muted-foreground">{selected.length} selected</span><div className="flex gap-1"><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={allSelected} onClick={() => onChange([...new Set([...selected, ...selectableIds])])}>Select all</Button><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!selected.length} onClick={() => onChange([])}>Clear</Button></div></div><div className="max-h-44 space-y-2 overflow-y-auto p-3">{options.map((option) => {
+    const checked = selected.includes(option.id);
+    return <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm"><Checkbox checked={checked} disabled={option.disabled && !checked} onCheckedChange={(value) => onChange(value ? [...selected, option.id] : selected.filter((id) => id !== option.id))} /><span className={option.disabled ? "text-muted-foreground" : ""}>{option.label}{option.disabled ? " (inactive)" : ""}</span></label>;
+  })}</div></div>;
 }
