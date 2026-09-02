@@ -42,7 +42,7 @@ function DashLayout() {
           <div className="h-8 w-8 rounded-md bg-sidebar-primary grid place-items-center">
             <Sparkles className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
-          <span className="font-semibold tracking-tight">SafishaPro</span>
+          <span className="font-semibold tracking-tight">Clean Match</span>
         </div>
         <nav className="sidebar-nav flex-1 overflow-y-auto py-4 px-3 space-y-6">
           {sections.map(([section, list]) => (

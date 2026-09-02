@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Eye, EyeOff, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Sign in — SafishaPro" }, { name: "description", content: "Sign in to SafishaPro admin dashboard." }] }),
+  head: () => ({ meta: [{ title: "Sign in — Clean Match" }, { name: "description", content: "Sign in to the Clean Match admin dashboard." }] }),
   component: LoginPage,
 });
 
@@ -31,7 +31,7 @@ function LoginPage() {
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
             <h2 className="text-2xl font-semibold">Sign in</h2>
-            <p className="text-sm text-muted-foreground mt-1">Sign in with your SafishaPro staff account.</p>
+            <p className="text-sm text-muted-foreground mt-1">Sign in with your Clean Match staff account.</p>
           </div>
           {showReset ? <form className="space-y-4" onSubmit={async (event) => {
             event.preventDefault(); setError(null); setResetMessage(null); setIsSubmitting(true);

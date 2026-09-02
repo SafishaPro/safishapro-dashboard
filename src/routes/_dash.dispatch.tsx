@@ -55,13 +55,13 @@ export const Route = createFileRoute("/_dash/dispatch")({
   component: DispatchPage,
   head: () => ({
     meta: [
-      { title: "Dispatch Board · SafishaPro Operations" },
+      { title: "Dispatch Board · Clean Match Operations" },
       {
         name: "description",
         content:
           "Drag-and-drop dispatch board to assign cleaners to jobs across zones, timeline and status lanes.",
       },
-      { property: "og:title", content: "Dispatch Board · SafishaPro Operations" },
+      { property: "og:title", content: "Dispatch Board · Clean Match Operations" },
       {
         property: "og:description",
         content: "Assign cleaners to jobs across zones, timeline and status lanes.",
