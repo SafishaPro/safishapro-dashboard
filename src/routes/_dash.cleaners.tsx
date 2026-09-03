@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
 import { cleanersApi, servicesApi, type Cleaner, type CleanerSkill, type Service } from "@/lib/api";
+import { LocationDisplay } from "@/components/location-display";
+import { LocationPicker, type LocationPickerValue } from "@/components/location-picker";
 
 export const Route = createFileRoute("/_dash/cleaners")({ component: CleanersPage });
 
@@ -370,7 +372,13 @@ function CleanersPage() {
                 <TableCell className="font-mono text-xs text-muted-foreground">{String((page - 1) * pageSize + index + 1).padStart(2, "0")}</TableCell>
                 <TableCell className="font-medium">{cleaner.full_name}</TableCell>
                 <TableCell>{cleaner.phone}</TableCell>
-                <TableCell>{cleaner.service_area || "—"}</TableCell>
+                <TableCell className="max-w-[200px]">
+                  <LocationDisplay
+                    lat={cleaner.current_latitude}
+                    lng={cleaner.current_longitude}
+                    city={cleaner.service_area}
+                  />
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     <Badge variant={cleaner.status === "active" ? "success" : "secondary"}>
@@ -506,7 +514,23 @@ function CleanerForm({
       </div>
       <div className="border-t pt-5"><div className="mb-3 flex items-center justify-between"><div><h3 className="font-medium">Skills</h3><p className="text-xs text-muted-foreground">Select services this cleaner can deliver.</p></div>{form.skill_ids.length > 0 && <Badge variant="secondary">{form.skill_ids.length} selected</Badge>}</div><MultiSelect options={skills.map((skill) => ({ id: skill.id, label: skill.name, disabled: !skill.is_active }))} selected={form.skill_ids} onChange={(skill_ids) => setForm({ ...form, skill_ids })} emptyLabel="No active skills. Create one from Manage skills." /></div>
       <div className="grid gap-4 border-t pt-5 sm:grid-cols-2"><Field label="Status"><Select value={form.status} onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent></Select></Field><label className="flex items-center gap-3 pt-6 text-sm"><Checkbox checked={form.is_available} onCheckedChange={(is_available) => setForm({ ...form, is_available: Boolean(is_available) })} /><span><span className="font-medium">Available for assignment</span><span className="block text-xs text-muted-foreground">Include in dispatch matching now</span></span></label></div>
-      <div className="border-t pt-5"><div className="mb-3"><h3 className="font-medium">Location <span className="font-normal text-muted-foreground">(optional)</span></h3><p className="text-xs text-muted-foreground">Enter both coordinates for proximity matching.</p></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Latitude"><Input type="number" step="any" value={form.current_latitude} onChange={(event) => setForm({ ...form, current_latitude: event.target.value })} placeholder="-1.286389" /></Field><Field label="Longitude"><Input type="number" step="any" value={form.current_longitude} onChange={(event) => setForm({ ...form, current_longitude: event.target.value })} placeholder="36.817223" /></Field></div></div>
+      <div className="border-t pt-5">
+        <LocationPicker
+          latitude={form.current_latitude}
+          longitude={form.current_longitude}
+          city={form.service_area}
+          onChange={(val: LocationPickerValue) =>
+            setForm({
+              ...form,
+              current_latitude: val.latitude != null ? String(val.latitude) : "",
+              current_longitude: val.longitude != null ? String(val.longitude) : "",
+              service_area: form.service_area || val.city,
+            })
+          }
+          label="Cleaner Duty Location & Base Map"
+          placeholder="Search cleaner base area, zone, or landmark…"
+        />
+      </div>
       <Field label="Internal notes"><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Optional onboarding or operations note" /></Field>
       <div className="flex justify-end border-t pt-4"><Button>{submitLabel}</Button></div>
     </form>
@@ -535,23 +559,21 @@ function AvailabilityForm({
         />
         Available for assignment
       </label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Latitude">
-          <Input
-            type="number"
-            step="any"
-            value={form.current_latitude}
-            onChange={(event) => setForm({ ...form, current_latitude: event.target.value })}
-          />
-        </Field>
-        <Field label="Longitude">
-          <Input
-            type="number"
-            step="any"
-            value={form.current_longitude}
-            onChange={(event) => setForm({ ...form, current_longitude: event.target.value })}
-          />
-        </Field>
+      <div>
+        <LocationPicker
+          latitude={form.current_latitude}
+          longitude={form.current_longitude}
+          city={form.service_area}
+          onChange={(val: LocationPickerValue) =>
+            setForm({
+              ...form,
+              current_latitude: val.latitude != null ? String(val.latitude) : "",
+              current_longitude: val.longitude != null ? String(val.longitude) : "",
+            })
+          }
+          label="Current Live Location & Coordinates"
+          placeholder="Search live cleaner location…"
+        />
       </div>
       <Button>Update availability</Button>
     </form>
@@ -600,10 +622,13 @@ function CleanerProfile({
           <MapPin className="size-4 text-blue-900" />
           Live location
         </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {cleaner.current_latitude != null && cleaner.current_longitude != null
-            ? `${cleaner.current_latitude}, ${cleaner.current_longitude}`
-            : "Location not provided"}
+        <p className="mt-1 text-sm font-medium">
+          <LocationDisplay
+            lat={cleaner.current_latitude}
+            lng={cleaner.current_longitude}
+            city={cleaner.service_area}
+            fallback="Location not provided"
+          />
         </p>
       </div>
       <div className="rounded-lg border p-3">
