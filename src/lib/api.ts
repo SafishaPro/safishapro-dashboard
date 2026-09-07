@@ -4,6 +4,7 @@ const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1
 const API_BASE_URL = configuredApiUrl.endsWith("/api/v1")
   ? configuredApiUrl
   : `${configuredApiUrl}/api/v1`;
+const USES_NGROK_FREE_TUNNEL = /^https:\/\/[^/]+\.ngrok-free\.dev(?:\/|$)/i.test(API_BASE_URL);
 const SESSION_KEY = "safishapro_admin_session";
 
 export function dispatchLiveUrl() {
@@ -510,6 +511,7 @@ async function request<T>(
       ...init,
       headers: {
         Accept: "application/json",
+        ...(USES_NGROK_FREE_TUNNEL ? { "ngrok-skip-browser-warning": "true" } : {}),
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...(authenticated && session ? { Authorization: `Bearer ${session.access_token}` } : {}),
         ...headers,
