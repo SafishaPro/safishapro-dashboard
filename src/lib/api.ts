@@ -221,7 +221,7 @@ export type Booking = {
   cleaner: { id: string; full_name: string; phone: string | null; rating: number | null } | null;
   assigned_at?: string | null;
   assignment_status?: "not_ready" | "awaiting_assignment" | "assigned";
-  recurring_plan?: boolean | null;
+  recurring_plan?: Subscription | null;
   cycle_number?: number | null;
   session_number?: number | null;
   status: string;
