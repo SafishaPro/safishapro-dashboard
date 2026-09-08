@@ -437,6 +437,11 @@ export type Cleaner = {
   }>;
 };
 export type Subscription = {
+  subscription_name: string;
+  customer_name: string;
+  service_package_id: string;
+  visits_per_cycle: number;
+  commitment_cycles: number;
   id: string;
   customer_id: string;
   package_id: string;
