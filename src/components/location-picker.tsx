@@ -21,6 +21,7 @@ interface LocationPickerProps {
   label?: string;
   placeholder?: string;
   showMapDefault?: boolean;
+  mapSelectionOnly?: boolean;
 }
 
 // Default center: Nairobi, Kenya
@@ -35,7 +36,11 @@ export function LocationPicker({
   label = "Location & Coordinates",
   placeholder = "Search location, area, or address…",
   showMapDefault = true,
+  mapSelectionOnly = false,
 }: LocationPickerProps) {
+  const selectionVersion = useRef(0);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -68,6 +73,8 @@ export function LocationPicker({
   // Handle position selection from map click, marker drag, or place autocomplete
   const updatePosition = useCallback(
     async (lat: number, lng: number, placeName?: string) => {
+      const version = ++selectionVersion.current;
+      if (mapSelectionOnly) onChangeRef.current({ latitude: null, longitude: null, city: "", address: "" });
       setCurrentLat(lat);
       setCurrentLng(lng);
 
@@ -79,21 +86,22 @@ export function LocationPicker({
 
       // Reverse geocode to get city and detailed address
       const geocoded = await reverseGeocode(lat, lng);
+      if (version !== selectionVersion.current) return;
       const newCity = geocoded?.city || "";
-      const newAddress = placeName || geocoded?.displayName || geocoded?.formattedAddress || "";
+      const newAddress = placeName || geocoded?.formattedAddress || geocoded?.displayName || "";
 
       setResolvedCity(newCity);
       setResolvedAddress(newAddress);
       setSearchText(newAddress);
 
-      onChange({
+      onChangeRef.current({
         latitude: lat,
         longitude: lng,
         city: newCity,
         address: newAddress,
       });
     },
-    [onChange]
+    [mapSelectionOnly]
   );
 
   // Initialize Google Maps and Places Autocomplete
@@ -161,7 +169,8 @@ export function LocationPicker({
             if (place.geometry?.location) {
               const lat = place.geometry.location.lat();
               const lng = place.geometry.location.lng();
-              const name = place.name || place.formatted_address || "";
+              const name = place.formatted_address || place.name || "";
+              ++selectionVersion.current;
 
               // Extract city if present in address components
               let extractedCity = "";
@@ -180,7 +189,7 @@ export function LocationPicker({
               setCurrentLat(lat);
               setCurrentLng(lng);
               setResolvedAddress(name);
-              if (extractedCity) setResolvedCity(extractedCity);
+              setResolvedCity(extractedCity);
               setSearchText(name);
 
               if (mapInstanceRef.current && markerRef.current) {
@@ -190,10 +199,10 @@ export function LocationPicker({
                 markerRef.current.setPosition(pos);
               }
 
-              onChange({
+              onChangeRef.current({
                 latitude: lat,
                 longitude: lng,
-                city: extractedCity || resolvedCity,
+                city: extractedCity,
                 address: name,
               });
             }
@@ -225,7 +234,7 @@ export function LocationPicker({
     if (newLat != null && newLng != null && !isNaN(newLat) && !isNaN(newLng)) {
       updatePosition(newLat, newLng);
     } else {
-      onChange({
+      onChangeRef.current({
         latitude: newLat,
         longitude: newLng,
         city: resolvedCity,
@@ -252,6 +261,7 @@ export function LocationPicker({
 
   return (
     <div className="space-y-3 rounded-lg border p-3.5 bg-card text-card-foreground">
+      <style>{`.pac-container { z-index: 10000 !important; pointer-events: auto; }`}</style>
       <div className="flex items-center justify-between gap-2">
         <Label className="text-sm font-medium flex items-center gap-1.5">
           <MapPin className="size-4 text-blue-900" />
@@ -287,15 +297,15 @@ export function LocationPicker({
         <Input
           ref={searchInputRef}
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          onChange={(e) => { setSearchText(e.target.value); if (mapSelectionOnly) { ++selectionVersion.current; setCurrentLat(null); setCurrentLng(null); setResolvedCity(""); setResolvedAddress(""); onChangeRef.current({ latitude: null, longitude: null, city: "", address: "" }); } }}
           placeholder={placeholder}
           className="pl-9 text-sm"
         />
       </div>
 
       {/* Interactive Map View */}
-      {isMapVisible && (
-        <div className="relative h-56 w-full overflow-hidden rounded-md border bg-muted">
+      {(
+        <div className={`${isMapVisible ? "" : "hidden"} relative h-56 w-full overflow-hidden rounded-md border bg-muted`}>
           {isLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 backdrop-blur-xs">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -322,6 +332,7 @@ export function LocationPicker({
           <Label className="text-xs text-muted-foreground">Latitude</Label>
           <Input
             type="number"
+            readOnly={mapSelectionOnly}
             step="any"
             className="h-8 text-xs font-mono"
             placeholder="-1.2921"
@@ -333,6 +344,7 @@ export function LocationPicker({
           <Label className="text-xs text-muted-foreground">Longitude</Label>
           <Input
             type="number"
+            readOnly={mapSelectionOnly}
             step="any"
             className="h-8 text-xs font-mono"
             placeholder="36.8219"
