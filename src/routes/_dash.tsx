@@ -3,11 +3,12 @@ import { useAuth } from "@/lib/auth";
 import { canVisit, navFor } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Bell, Search, Sparkles, LogOut } from "lucide-react";
-import { useMemo } from "react";
+import { Bell, Search, Sparkles, LogOut, Menu, ChevronRight, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { usersApi } from "@/lib/api";
 
 export const Route = createFileRoute("/_dash")({
   component: DashLayout,
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/_dash")({
 
 function DashLayout() {
   const { user, permissions, logout, isRestoring } = useAuth();
+  const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null);
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -28,6 +30,16 @@ function DashLayout() {
     return Array.from(map.entries());
   }, [items]);
 
+  useEffect(() => {
+    let active = true;
+    setAccountPhotoUrl(null);
+    if (!user) return () => { active = false; };
+    void usersApi.myProfilePhotoUrl()
+      .then(({ url }) => { if (active) setAccountPhotoUrl(url); })
+      .catch(() => { if (active) setAccountPhotoUrl(null); });
+    return () => { active = false; };
+  }, [user?.id, user?.profile_photo_url]);
+
   if (isRestoring) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (!canVisit(pathname, permissions, user.role.slug)) return <Navigate to={items[0]?.to ?? "/profile"} replace />;
@@ -37,33 +49,35 @@ function DashLayout() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
-      <aside className="hidden h-screen shrink-0 md:flex md:w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-        <div className="h-16 px-5 flex items-center gap-2 border-b border-sidebar-border">
-          <div className="h-8 w-8 rounded-md bg-sidebar-primary grid place-items-center">
-            <Sparkles className="h-4 w-4 text-sidebar-primary-foreground" />
+      <aside className="hidden h-screen w-[17rem] shrink-0 flex-col border-r border-blue-950/30 bg-gradient-to-b from-[#123b74] via-[#10366b] to-[#0c2d5d] text-white md:flex">
+        <div className="flex h-[4.5rem] items-center gap-3 border-b border-white/10 px-5">
+          <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 shadow-md shadow-blue-950/30 ring-1 ring-white/20">
+            <Sparkles className="size-5 text-white" />
           </div>
-          <span className="font-semibold tracking-tight">Clean Match</span>
+          <div className="min-w-0"><div className="truncate text-sm font-bold tracking-wide text-white">SAFISHA PRO</div><div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-50/90">Operations console</div></div>
         </div>
-        <nav className="sidebar-nav flex-1 overflow-y-auto py-4 px-3 space-y-6">
+        <nav aria-label="Main navigation" className="sidebar-nav flex-1 space-y-5 overflow-y-auto px-3 py-5">
           {sections.map(([section, list]) => (
             <div key={section}>
-              <div className="px-2 mb-2 text-[10px] uppercase tracking-wider text-sidebar-foreground/50">{section}</div>
+              <div className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.14em] text-blue-50/85">{section}</div>
               <ul className="space-y-1">
                 {list.map((i) => {
-                  const active = pathname === i.to;
+                  const active = pathname === i.to || pathname.startsWith(`${i.to}/`);
                   const Icon = i.icon;
                   return (
                     <li key={i.to}>
                       <Link
                         to={i.to}
-                        className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors ${
+                        aria-current={active ? "page" : undefined}
+                        className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
                           active
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            ? "bg-blue-500 font-semibold text-white shadow-md shadow-blue-950/25 ring-1 ring-blue-300/30 before:absolute before:bottom-2 before:left-0 before:top-2 before:w-0.5 before:rounded-full before:bg-sky-200"
+                            : "text-white/95 hover:bg-white/15 hover:text-white"
                         }`}
                       >
-                        <Icon className="h-4 w-4" />
+                        <Icon className={`size-[17px] shrink-0 ${active ? "text-white" : "text-blue-50/90 group-hover:text-white"}`} />
                         {i.label}
+                        {active && <ChevronRight className="ml-auto size-4 text-white" />}
                       </Link>
                     </li>
                   );
@@ -72,14 +86,24 @@ function DashLayout() {
             </div>
           ))}
         </nav>
-        <div className="p-4 border-t border-sidebar-border text-xs text-sidebar-foreground/60">
-          v1.0 · Demo mock data
+        <div className="border-t border-white/10 p-4">
+          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.07] p-3"><span className="grid size-8 place-items-center rounded-lg bg-sky-300/15 text-sky-100"><ShieldCheck className="size-4" /></span><div className="min-w-0"><p className="truncate text-xs font-semibold text-white">Secure workspace</p><p className="mt-0.5 truncate text-[10px] text-blue-50/80">Role-based access enabled</p></div></div>
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="h-16 border-b bg-card flex items-center gap-4 px-4 md:px-6">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-2 border-blue-200 bg-blue-700 text-white hover:bg-blue-800 hover:text-white md:hidden"><Menu className="size-4" /><span>Menu</span></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[75vh] w-72 overflow-y-auto p-2">
+              {sections.map(([section, list], index) => <div key={section}>
+                {index > 0 && <DropdownMenuSeparator className="my-2" />}
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{section}</DropdownMenuLabel>
+                {list.map((item) => { const Icon = item.icon; const active = pathname === item.to || pathname.startsWith(`${item.to}/`); return <DropdownMenuItem key={item.to} asChild className={active ? "bg-blue-50 font-semibold text-blue-700" : ""}><Link to={item.to}><Icon className="mr-2 size-4" />{item.label}</Link></DropdownMenuItem>; })}
+              </div>)}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="flex-1 flex items-center gap-3 max-w-xl">
             <div className="relative w-full">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -94,7 +118,7 @@ function DashLayout() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-full">
-                  <Avatar className="h-9 w-9"><AvatarFallback className="bg-primary text-primary-foreground text-xs">{initials}</AvatarFallback></Avatar>
+                  <Avatar className="h-9 w-9"><AvatarImage src={accountPhotoUrl ?? undefined} alt={`${user.full_name} profile`} /><AvatarFallback className="bg-primary text-primary-foreground text-xs">{initials}</AvatarFallback></Avatar>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -116,6 +140,7 @@ function DashLayout() {
           <Outlet />
         </main>
       </div>
+
     </div>
   );
 }

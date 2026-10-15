@@ -49,6 +49,8 @@ import {
   Sparkles,
   Clock,
   User,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_dash/dispatch")({
@@ -59,7 +61,7 @@ export const Route = createFileRoute("/_dash/dispatch")({
       {
         name: "description",
         content:
-          "Drag-and-drop dispatch board to assign cleaners to jobs across zones, timeline and status lanes.",
+          "Dispatch board to review daily jobs, spot scheduling conflicts, and assign available cleaners.",
       },
       { property: "og:title", content: "Dispatch Board · Clean Match Operations" },
       {
@@ -92,6 +94,7 @@ type Job = {
 
 const HOURS = Array.from({ length: 11 }, (_, i) => 7 + i);
 const COL = 104;
+const DISPATCH_STATUSES = new Set(["awaiting_assignment", "assigned", "cleaner_en_route", "in_progress", "completed", "payout_pending", "payout_paid"]);
 const localDateKey = (value: Date) => {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -238,23 +241,23 @@ function initials(name: string) {
 
 function toJob(source: Record<string, unknown> | Booking): Job {
   const item = source as Record<string, unknown>;
-  const scheduled = new Date(String(item.scheduled_for));
+  const scheduled = item.scheduled_for ? new Date(String(item.scheduled_for)) : null;
   const status = String(item.status ?? "awaiting_assignment");
   const cleaner = item.cleaner as Booking["cleaner"] | undefined;
   const cleanerId = item.cleaner_id ? String(item.cleaner_id) : cleaner?.id ?? null;
   const completedStatuses = new Set(["completed", "payout_pending", "payout_paid"]);
-  const displayStatus: Job["status"] = !cleanerId
-    ? "Unassigned"
-    : completedStatuses.has(status)
-      ? "Completed"
-      : status === "in_progress"
-        ? "In Progress"
+  const displayStatus: Job["status"] = completedStatuses.has(status)
+    ? "Completed"
+    : status === "in_progress" || status === "cleaner_en_route"
+      ? "In Progress"
+      : !cleanerId
+        ? "Unassigned"
         : "Assigned";
   return {
     id: String(item.booking_id ?? item.id), service: String(item.service_name ?? "Service"), packageName: item.package_name ? String(item.package_name) : null, propertyType: item.property_type_name ? String(item.property_type_name) : null,
     customer: String(item.customer_name ?? "Customer name unavailable"),
     address: [item.address_line, item.city].filter(Boolean).join(", ") || "Address not provided",
-    zone: String(item.city ?? "Unassigned"), start: scheduled.getHours(),
+    zone: String(item.city ?? "Unassigned"), start: scheduled && Number.isFinite(scheduled.getTime()) ? scheduled.getHours() : HOURS[0],
     duration: Math.max(1, Math.ceil(Number(item.estimated_duration_minutes ?? 60) / 60)), amount: Number(item.quoted_price ?? 0),
     currency: String(item.currency ?? "KES"), priority: "Standard", status: displayStatus,
     cleanerId, notes: String(item.special_instructions ?? ""),
@@ -304,20 +307,34 @@ function DispatchPage() {
   const [selectedCleanerId, setSelectedCleanerId] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [dayOffset, setDayOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const day = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + dayOffset);
 
   useEffect(() => {
-    if (!can("bookings.read")) return;
+    if (!can("bookings.read", "bookings.assign")) { setJobs([]); setLoading(false); return; }
+    let cancelled = false;
     const startDate = localDateKey(day);
+    setLoading(true);
+    setLoadError(null);
+    setJobs([]);
+    setCleaners([]);
     Promise.all([bookingsApi.dispatchCalendar({ start_date: startDate, end_date: startDate }), bookingsApi.list({ assignment_status: "awaiting_assignment", start_date: startDate, end_date: startDate, limit: 200 }), can("cleaners.read") ? cleanersApi.list({ status: "active" }) : Promise.resolve([])]).then(([events, queue, profiles]) => {
-      const calendarJobs = events.map(toJob);
+      if (cancelled) return;
+      const calendarJobs = events.filter((event) => DISPATCH_STATUSES.has(String(event.status))).map(toJob);
       const queueJobs = queue.map(toJob);
       setJobs([...calendarJobs, ...queueJobs.filter((queued) => !calendarJobs.some((job) => job.id === queued.id))]);
-        setCleaners(profiles.map((cleaner) => ({ id: cleaner.id, name: cleaner.full_name, zone: cleaner.service_area, availability: cleaner.is_available ? "Available" : "Unavailable", rating: cleaner.rating, skills: cleaner.skills.map((skill) => skill.name) })));
-    }).catch((cause) => toast.error(cause instanceof Error ? cause.message : "Unable to load dispatch data."));
+      setCleaners(profiles.map((cleaner) => ({ id: cleaner.id, name: cleaner.full_name, zone: cleaner.service_area, availability: cleaner.is_available ? "Available" : "Unavailable", rating: cleaner.rating, skills: (cleaner.skills ?? []).map((skill) => skill.name) })));
+    }).catch((cause) => {
+      if (cancelled) return;
+      const message = cause instanceof Error ? cause.message : "Unable to load dispatch data.";
+      setLoadError(message);
+      toast.error(message);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [dayOffset, can, refreshKey]);
 
-  const zones = useMemo(() => Array.from(new Set(cleaners.map((c) => c.zone))), []);
+  const zones = useMemo(() => Array.from(new Set(jobs.map((job) => job.zone).filter((value) => value && value !== "Unassigned"))).sort(), [jobs]);
   const selectedCleaner = cleaners.find((cleaner) => cleaner.id === selectedCleanerId);
 
   useEffect(() => {
@@ -356,7 +373,7 @@ function DispatchPage() {
   }
 
   useEffect(() => {
-    const url = can("bookings.read") ? dispatchLiveUrl() : null;
+    const url = can("bookings.assign") ? dispatchLiveUrl() : null;
     if (!url) return;
     const socket = new WebSocket(url);
     socket.onmessage = () => setRefreshKey((key) => key + 1);
@@ -386,10 +403,15 @@ function DispatchPage() {
             <div>
               <h1 className="text-sm font-semibold leading-tight">Dispatch Board</h1>
               <p className="text-xs text-muted-foreground leading-tight">
-                {visible.length} jobs · {unassigned.length} unassigned · {conflicts.size} conflicts
+                {loading ? "Loading schedule…" : `${visible.length} jobs · ${unassigned.length} unassigned · ${conflicts.size} conflicts`}
               </p>
             </div>
           </div>
+
+          <Button variant="outline" size="sm" className="h-8 gap-2" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading} aria-label="Refresh dispatch schedule">
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
 
           <div className="flex items-center rounded-md border bg-background">
             <Button
@@ -466,6 +488,8 @@ function DispatchPage() {
 
         </div>
 
+        {loadError && <div role="alert" className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800"><span className="flex items-center gap-2"><AlertCircle className="size-4 shrink-0" />{loadError}</span><Button variant="outline" size="sm" className="h-7 border-rose-300 bg-white text-rose-800" onClick={() => setRefreshKey((key) => key + 1)}>Retry</Button></div>}
+
         <div className="flex-1 flex min-h-0">
           {/* Unassigned rail */}
           <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r bg-muted/30">
@@ -487,7 +511,7 @@ function DispatchPage() {
                 {!unassigned.length && (
                   <div className="text-center text-xs text-muted-foreground py-10">
                     <Sparkles className="h-5 w-5 mx-auto mb-2 text-primary" />
-                    Every job is dispatched.
+                    No unassigned jobs for this day.
                   </div>
                 )}
               </div>
@@ -496,6 +520,7 @@ function DispatchPage() {
 
           {/* Main surface */}
           <div className="flex-1 min-w-0 overflow-auto">
+            {!loading && !loadError && visible.length === 0 && <div className="m-4 flex items-start gap-3 rounded-xl border border-dashed bg-card p-5 text-sm text-muted-foreground"><CalendarDays className="mt-0.5 size-4 shrink-0 text-primary" /><span>{jobs.length ? "No jobs match the current search or zone filter." : `No dispatchable jobs are scheduled for ${day.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}.`}</span></div>}
             {view === "timeline" && (
               <div className="min-w-[900px]">
                 <div className="sticky top-0 z-10 flex bg-card/95 backdrop-blur border-b">
@@ -675,6 +700,7 @@ function DispatchPage() {
                   label="Window"
                   value={`${selected.start}:00 – ${selected.start + selected.duration}:00`}
                 />
+                {(selected.status === "Unassigned" || selected.status === "Assigned") && <>
                 <Separator />
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
@@ -757,6 +783,7 @@ function DispatchPage() {
                     {selected.cleanerId ? "Reassign cleaner" : "Assign cleaner"}
                   </Button>
                 </div>
+                </>}
                 <Separator />
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">

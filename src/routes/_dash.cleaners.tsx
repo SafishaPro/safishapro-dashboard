@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CalendarDays, MapPin, Plus, Power, RefreshCw, Settings2 } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, FileText, MapPin, Plus, Power, RefreshCw, Settings2, ShieldCheck, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,9 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { cleanersApi, servicesApi, type Cleaner, type CleanerSkill, type Service } from "@/lib/api";
+import { cleanersApi, isUploadWithinLimit, PROFILE_PHOTO_MAX_BYTES, MEDIA_UPLOAD_MAX_BYTES, servicesApi, usersApi, type Cleaner, type CleanerKycDocumentType, type CleanerSkill, type Service } from "@/lib/api";
 import { LocationDisplay } from "@/components/location-display";
 import { LocationPicker, type LocationPickerValue } from "@/components/location-picker";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export const Route = createFileRoute("/_dash/cleaners")({ component: CleanersPage });
 
@@ -58,7 +59,7 @@ const blankForm: CleanerForm = {
   national_id: "",
   service_area: "",
   skill_ids: [],
-  status: "active",
+  status: "inactive",
   is_available: true,
   current_latitude: "",
   current_longitude: "",
@@ -67,7 +68,7 @@ const blankForm: CleanerForm = {
 const toForm = (cleaner: Cleaner): CleanerForm => ({
   full_name: cleaner.full_name,
   phone: cleaner.phone,
-  national_id: cleaner.national_id,
+  national_id: cleaner.national_id ?? "",
   service_area: cleaner.service_area,
   skill_ids: cleaner.skill_ids,
   status: cleaner.status,
@@ -81,6 +82,14 @@ const shiftsWindow = () => ({
   starts_at: new Date(Date.now() - 7 * 86_400_000).toISOString(),
   ends_at: new Date(Date.now() + 28 * 86_400_000).toISOString(),
 });
+const cleanerActivity = (cleaner: Cleaner) => {
+  if (cleaner.status !== "active") return { label: "Inactive", className: "border-red-200 bg-red-100 text-red-800" };
+  const lastJobAt = cleaner.last_completed_job_at ? new Date(cleaner.last_completed_job_at).getTime() : 0;
+  const recentCutoff = Date.now() - 3 * 86_400_000;
+  return lastJobAt >= recentCutoff && lastJobAt <= Date.now()
+    ? { label: "Active", className: "border-emerald-200 bg-emerald-100 text-emerald-800" }
+    : { label: "Active", className: "border-orange-200 bg-orange-100 text-orange-800" };
+};
 
 function formPayload(form: CleanerForm) {
   if (Boolean(form.current_latitude) !== Boolean(form.current_longitude))
@@ -88,7 +97,7 @@ function formPayload(form: CleanerForm) {
   return {
     full_name: form.full_name,
     phone: form.phone,
-    national_id: form.national_id,
+    national_id: form.national_id.trim() || null,
     service_area: form.service_area,
     skill_ids: form.skill_ids,
     status: form.status,
@@ -108,8 +117,13 @@ function CleanersPage() {
   const [cleaners, setCleaners] = useState<Cleaner[]>([]);
   const [skills, setSkills] = useState<CleanerSkill[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [kycDocumentTypes, setKycDocumentTypes] = useState<CleanerKycDocumentType[]>([]);
   const [selected, setSelected] = useState<Cleaner | null>(null);
+  const [showDocumentsFirst, setShowDocumentsFirst] = useState(false);
   const [form, setForm] = useState<CleanerForm>(blankForm);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [kycFiles, setKycFiles] = useState<Record<string, File | null>>({});
+  const [draftCleanerId, setDraftCleanerId] = useState<string | null>(null);
   const [mode, setMode] = useState<"profile" | "create" | "edit" | "availability" | "shifts" | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -129,6 +143,7 @@ function CleanersPage() {
     notes: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [placeholderUrl, setPlaceholderUrl] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -158,27 +173,92 @@ function CleanersPage() {
       setError(cause instanceof Error ? cause.message : "Unable to load cleaner skills.");
     }
   };
-  useEffect(() => { void Promise.all([load(), loadSkills()]); }, []);
+  const loadKycDocumentTypes = async () => {
+    try { setKycDocumentTypes(await cleanersApi.kycDocumentTypes()); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load cleaner document requirements."); }
+  };
+  useEffect(() => {
+    void Promise.all([load(), loadSkills(), loadKycDocumentTypes()]);
+    void usersApi.cleanerPlaceholder().then(({ url }) => setPlaceholderUrl(url)).catch(() => {});
+  }, []);
 
   const view = async (cleaner: Cleaner) => {
     try {
       setError(null);
       const data = await cleanersApi.get(cleaner.id);
       setSelected(data);
+      setShowDocumentsFirst(false);
       setMode("profile");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load this cleaner profile.");
     }
   };
+  const saveDocuments = async (cleanerId: string, documents: Pick<Cleaner, "national_id" | "kra_pin" | "passport_number" | "good_conduct_certificate_number" | "other_document_reference">) => {
+    await cleanersApi.update(cleanerId, documents);
+    setSelected(await cleanersApi.get(cleanerId));
+  };
+  const uploadKycFile = async (cleanerId: string, type: string, file: File) => {
+    await cleanersApi.uploadKycFile(cleanerId, type, file);
+    setSelected(await cleanersApi.get(cleanerId));
+  };
+  const viewKycFile = async (cleanerId: string, type: string) => {
+    try {
+      await cleanersApi.viewKycFile(cleanerId, type);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to open this KYC document.");
+    }
+  };
+  const viewLegacyKycDocument = async (cleanerId: string) => {
+    try {
+      await cleanersApi.viewKycDocument(cleanerId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to open this KYC document.");
+    }
+  };
   const save = async (event: FormEvent) => {
     event.preventDefault();
     try {
-      const payload = formPayload(form);
-      if (mode === "create") await cleanersApi.create(payload);
-      else if (selected) await cleanersApi.update(selected.id, payload);
-      setMode(null);
-      setSelected(null);
-      await load();
+      if (mode === "create") {
+        if (form.full_name.trim().length < 2) throw new Error("Enter the cleaner’s full name.");
+        if (form.phone.trim().length < 8) throw new Error("Enter a valid cleaner phone number.");
+        if (form.service_area.trim().length < 2) throw new Error("Enter the cleaner’s service area.");
+        const missingDocuments = kycDocumentTypes.filter((item) => item.is_active && item.required && !kycFiles[item.code]);
+        if (!photoFile || missingDocuments.length) {
+          throw new Error(`Choose a cleaner photo${missingDocuments.length ? ` and required documents: ${missingDocuments.map((item) => item.label).join(", ")}` : ""}.`);
+        }
+        const payload = formPayload({ ...form, full_name: form.full_name.trim(), phone: form.phone.trim(), service_area: form.service_area.trim() });
+        const cleaner = draftCleanerId
+          ? await cleanersApi.update(draftCleanerId, { ...payload, status: "inactive" })
+          : await cleanersApi.create({ ...payload, status: "inactive" });
+        if (!draftCleanerId) setDraftCleanerId(cleaner.id);
+        await cleanersApi.uploadPhoto(cleaner.id, photoFile);
+        for (const documentType of kycDocumentTypes.filter((item) => item.is_active)) {
+          const file = kycFiles[documentType.code];
+          if (file) await cleanersApi.uploadKycFile(cleaner.id, documentType.code, file);
+        }
+        if (can("cleaners.update")) {
+          await cleanersApi.update(cleaner.id, { status: "active" });
+        }
+        const details = await cleanersApi.get(cleaner.id);
+        setSelected(details);
+        setShowDocumentsFirst(true);
+        setDraftCleanerId(null);
+        setPhotoFile(null);
+        setKycFiles({});
+        setMode("profile");
+        await load();
+      } else if (selected) {
+        const payload = formPayload(form);
+        // Preserve the cleaner's current status without revalidating activation
+        // requirements during a basic profile edit.
+        if (form.status === selected.status) delete payload.status;
+        await cleanersApi.update(selected.id, payload);
+        if (photoFile) await cleanersApi.uploadPhoto(selected.id, photoFile);
+        setSelected(await cleanersApi.get(selected.id));
+        setPhotoFile(null);
+        setMode("profile");
+        await load();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to save cleaner.");
     }
@@ -256,6 +336,9 @@ function CleanersPage() {
   const openCreate = () => {
     setSelected(null);
     setForm(blankForm);
+    setPhotoFile(null);
+    setKycFiles({});
+    setDraftCleanerId(null);
     setMode("create");
   };
   const openSkillManager = () => {
@@ -283,6 +366,8 @@ function CleanersPage() {
   };
   const openEdit = (cleaner: Cleaner) => {
     setForm(toForm(cleaner));
+    setPhotoFile(null);
+    setKycFiles({});
     setMode("edit");
   };
   const openAvailability = (cleaner: Cleaner) => {
@@ -355,10 +440,16 @@ function CleanersPage() {
           </Select>
           <Button onClick={() => void load()}>Apply filters</Button>
         </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Cleaner activity legend">
+          <Badge className="border-emerald-200 bg-emerald-100 text-emerald-800">Active</Badge>
+          <Badge className="border-orange-200 bg-orange-100 text-orange-800">Active</Badge>
+          <Badge className="border-red-200 bg-red-100 text-red-800">Inactive</Badge>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-14">#</TableHead>
+              <TableHead className="w-16">Photo</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Location</TableHead>
@@ -370,6 +461,7 @@ function CleanersPage() {
             {visibleCleaners.map((cleaner, index) => (
               <TableRow key={cleaner.id}>
                 <TableCell className="font-mono text-xs text-muted-foreground">{String((page - 1) * pageSize + index + 1).padStart(2, "0")}</TableCell>
+                <TableCell><CleanerAvatar cleaner={cleaner} placeholderUrl={placeholderUrl} /></TableCell>
                 <TableCell className="font-medium">{cleaner.full_name}</TableCell>
                 <TableCell>{cleaner.phone}</TableCell>
                 <TableCell className="max-w-[200px]">
@@ -381,8 +473,8 @@ function CleanersPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    <Badge variant={cleaner.status === "active" ? "success" : "secondary"}>
-                      {cleaner.status}
+                    <Badge className={cleanerActivity(cleaner).className}>
+                      {cleanerActivity(cleaner).label}
                     </Badge>
                     <Badge variant={cleaner.is_available ? "outline" : "secondary"}>
                       {cleaner.is_available ? "Available" : "Unavailable"}
@@ -402,7 +494,7 @@ function CleanersPage() {
             ))}
             {!cleaners.length && (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
                   No cleaner profiles found.
                 </TableCell>
               </TableRow>
@@ -438,6 +530,14 @@ function CleanersPage() {
               onSubmit={save}
               submitLabel={mode === "create" ? "Create cleaner" : "Save changes"}
               skills={skills.filter((skill) => skill.is_active || form.skill_ids.includes(skill.id))}
+              kycDocumentTypes={kycDocumentTypes.filter((item) => item.is_active)}
+              isCreating={mode === "create"}
+              currentPhotoCleanerId={selected?.id ?? null}
+              currentPhotoUrl={selected?.profile_photo_url ?? placeholderUrl}
+              photoFile={photoFile}
+              setPhotoFile={setPhotoFile}
+              kycFiles={kycFiles}
+              setKycFiles={setKycFiles}
             />
           ) : mode === "availability" ? (
             <AvailabilityForm form={form} setForm={setForm} onSubmit={saveAvailability} />
@@ -460,13 +560,21 @@ function CleanersPage() {
             />
           ) : selected ? (
             <CleanerProfile
+              key={selected.id}
               cleaner={selected}
+              kycDocumentTypes={kycDocumentTypes.filter((item) => item.is_active)}
+              placeholderUrl={placeholderUrl}
+              initialTab={showDocumentsFirst ? "documents" : "profile"}
               can={can}
               onEdit={() => openEdit(selected)}
               onAvailability={() => openAvailability(selected)}
               onShifts={() => void loadShifts(selected)}
               onDeactivate={() => void deactivate(selected)}
               onReactivate={() => void reactivate(selected)}
+              onSaveDocuments={saveDocuments}
+              onViewKycFile={(type) => void viewKycFile(selected.id, type)}
+              onViewLegacyKycDocument={() => void viewLegacyKycDocument(selected.id)}
+              onUploadKycFile={(type, file) => uploadKycFile(selected.id, type, file)}
             />
           ) : null}
         </DialogContent>
@@ -496,24 +604,51 @@ function CleanerForm({
   onSubmit,
   submitLabel,
   skills,
+  kycDocumentTypes,
+  isCreating,
+  currentPhotoCleanerId,
+  currentPhotoUrl,
+  photoFile,
+  setPhotoFile,
+  kycFiles,
+  setKycFiles,
 }: {
   form: CleanerForm;
   setForm: (form: CleanerForm) => void;
   onSubmit: (event: FormEvent) => void;
   submitLabel: string;
   skills: CleanerSkill[];
+  kycDocumentTypes: CleanerKycDocumentType[];
+  isCreating: boolean;
+  currentPhotoCleanerId: string | null;
+  currentPhotoUrl: string | null;
+  photoFile: File | null;
+  setPhotoFile: (file: File | null) => void;
+  kycFiles: Record<string, File | null>;
+  setKycFiles: (files: Record<string, File | null>) => void;
 }) {
+  const resolvedPhotoUrl = useCleanerPhotoUrl(currentPhotoCleanerId, currentPhotoUrl);
+  const readyToCreate = !isCreating || (
+    form.full_name.trim().length >= 2 &&
+    form.phone.trim().length >= 8 &&
+    form.service_area.trim().length >= 2 &&
+    Boolean(photoFile && kycDocumentTypes.filter((item) => item.required).every((item) => kycFiles[item.code]))
+  );
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
-      <p className="text-sm text-muted-foreground">Fields marked * are required. Add skills to make the cleaner eligible for matching.</p>
+      <p className="text-sm text-muted-foreground">Fields marked * are required. Add the cleaner photo and each required document before creating the record. Optional documents can be added now or later. Add skills to make the cleaner eligible for matching.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full name *"><Input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} placeholder="e.g. Amina Wanjiku" required /></Field>
         <Field label="Phone number *"><Input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="+254 7XX XXX XXX" required /></Field>
-        <Field label="National ID *"><Input value={form.national_id} onChange={(event) => setForm({ ...form, national_id: event.target.value })} placeholder="Official ID number" required /></Field>
+        <Field label="National ID number (optional with birth certificate)"><Input value={form.national_id} onChange={(event) => setForm({ ...form, national_id: event.target.value })} placeholder="Official ID number, if available" /></Field>
         <Field label="Service area *"><Input value={form.service_area} onChange={(event) => setForm({ ...form, service_area: event.target.value })} placeholder="e.g. Westlands, Nairobi" required /></Field>
       </div>
+      <div className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
+        <div className="space-y-2"><Label htmlFor="cleaner-photo">{isCreating ? "Cleaner photo *" : "Replace cleaner photo (optional)"}</Label>{resolvedPhotoUrl && !photoFile && <img src={resolvedPhotoUrl} alt="Current cleaner profile" className="size-20 rounded-lg object-cover" />}<Input id="cleaner-photo" type="file" accept="image/jpeg,image/png,image/webp" required={isCreating && !photoFile} onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file && !isUploadWithinLimit(file, PROFILE_PHOTO_MAX_BYTES, "Cleaner photo")) { event.currentTarget.value = ""; setPhotoFile(null); return; } setPhotoFile(file); }} /><p className="text-xs text-muted-foreground">JPEG, PNG, or WebP; up to 5 MB.</p>{photoFile && <p className="text-xs font-medium">Selected: {photoFile.name}</p>}</div>
+        {isCreating && kycDocumentTypes.map((document) => <DocumentFileInput key={document.code} id={`cleaner-${document.code}`} label={`${document.label}${document.required ? " *" : " (optional)"}`} file={kycFiles[document.code] ?? null} required={document.required} onChange={(file) => setKycFiles({ ...kycFiles, [document.code]: file })} />)}
+      </div>
       <div className="border-t pt-5"><div className="mb-3 flex items-center justify-between"><div><h3 className="font-medium">Skills</h3><p className="text-xs text-muted-foreground">Select services this cleaner can deliver.</p></div>{form.skill_ids.length > 0 && <Badge variant="secondary">{form.skill_ids.length} selected</Badge>}</div><MultiSelect options={skills.map((skill) => ({ id: skill.id, label: skill.name, disabled: !skill.is_active }))} selected={form.skill_ids} onChange={(skill_ids) => setForm({ ...form, skill_ids })} emptyLabel="No active skills. Create one from Manage skills." /></div>
-      <div className="grid gap-4 border-t pt-5 sm:grid-cols-2"><Field label="Status"><Select value={form.status} onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent></Select></Field><label className="flex items-center gap-3 pt-6 text-sm"><Checkbox checked={form.is_available} onCheckedChange={(is_available) => setForm({ ...form, is_available: Boolean(is_available) })} /><span><span className="font-medium">Available for assignment</span><span className="block text-xs text-muted-foreground">Include in dispatch matching now</span></span></label></div>
+      <div className="grid gap-4 border-t pt-5 sm:grid-cols-2">{isCreating ? <p className="self-center text-sm text-muted-foreground">The cleaner is activated after the photo and all required documents upload successfully.</p> : <Field label="Status"><Select value={form.status} onValueChange={(status) => setForm({ ...form, status: status as Cleaner["status"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent></Select></Field>}<label className="flex items-center gap-3 pt-2 text-sm"><Checkbox checked={form.is_available} onCheckedChange={(is_available) => setForm({ ...form, is_available: Boolean(is_available) })} /><span><span className="font-medium">Available for assignment</span><span className="block text-xs text-muted-foreground">Include in dispatch matching now</span></span></label></div>
       <div className="border-t pt-5">
         <LocationPicker
           latitude={form.current_latitude}
@@ -529,12 +664,29 @@ function CleanerForm({
           }
           label="Cleaner Duty Location & Base Map"
           placeholder="Search cleaner base area, zone, or landmark…"
+          showCoordinates={false}
         />
       </div>
       <Field label="Internal notes"><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Optional onboarding or operations note" /></Field>
-      <div className="flex justify-end border-t pt-4"><Button>{submitLabel}</Button></div>
+      <div className="flex justify-end border-t pt-4"><Button disabled={!readyToCreate}>{submitLabel}</Button></div>
     </form>
   );
+}
+
+function DocumentFileInput({
+  id,
+  label,
+  file,
+  required = false,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  file: File | null;
+  required?: boolean;
+  onChange: (file: File | null) => void;
+}) {
+  return <div className="space-y-2"><Label htmlFor={id}>{label}</Label><Input id={id} type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required={required && !file} onChange={(event) => { const selected = event.target.files?.[0] ?? null; if (selected && !isUploadWithinLimit(selected, MEDIA_UPLOAD_MAX_BYTES, "KYC document")) { event.currentTarget.value = ""; onChange(null); return; } onChange(selected); }} /><p className="text-xs text-muted-foreground">PDF or image; up to 10 MB. Stored privately.</p>{file && <p className="text-xs font-medium">Selected: {file.name}</p>}</div>;
 }
 function AvailabilityForm({
   form,
@@ -548,8 +700,7 @@ function AvailabilityForm({
   return (
     <form className="space-y-4" onSubmit={onSubmit}>
       <p className="text-sm text-muted-foreground">
-        Use this for current duty status and live location. Location coordinates must be entered
-        together.
+        Update availability and choose the cleaner’s current duty location.
       </p>
       <label className="flex items-center gap-2 text-sm font-medium">
         <input
@@ -571,8 +722,9 @@ function AvailabilityForm({
               current_longitude: val.longitude != null ? String(val.longitude) : "",
             })
           }
-          label="Current Live Location & Coordinates"
+          label="Current Live Location"
           placeholder="Search live cleaner location…"
+          showCoordinates={false}
         />
       </div>
       <Button>Update availability</Button>
@@ -580,112 +732,168 @@ function AvailabilityForm({
   );
 }
 function CleanerProfile({
-  cleaner,
-  can,
-  onEdit,
-  onAvailability,
-  onShifts,
-  onDeactivate,
-  onReactivate,
+  cleaner, kycDocumentTypes, placeholderUrl, initialTab, can, onEdit, onAvailability, onShifts, onDeactivate, onReactivate, onSaveDocuments, onViewKycFile, onViewLegacyKycDocument, onUploadKycFile,
 }: {
   cleaner: Cleaner;
+  kycDocumentTypes: CleanerKycDocumentType[];
+  placeholderUrl: string | null;
+  initialTab: "profile" | "documents";
   can: (...permissions: string[]) => boolean;
   onEdit: () => void;
   onAvailability: () => void;
   onShifts: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
+  onSaveDocuments: (cleanerId: string, documents: Pick<Cleaner, "national_id" | "kra_pin" | "passport_number" | "good_conduct_certificate_number" | "other_document_reference">) => Promise<void>;
+  onViewKycFile: (type: string) => void;
+  onViewLegacyKycDocument: () => void;
+  onUploadKycFile: (type: string, file: File) => Promise<void>;
 }) {
   const earnings = cleaner.stats?.total_earnings_by_currency ?? {};
   const earningsLabel = Object.entries(earnings).length
     ? Object.entries(earnings).map(([currency, amount]) => `${currency} ${Number(amount).toLocaleString()}`).join(" · ")
     : "KES 0";
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2">
-        {[
-          ["Phone", cleaner.phone],
-          ["National ID", cleaner.national_id],
-          ["Service area", cleaner.service_area],
-          ["Rating", cleaner.rating ?? "—"],
-          ["Status", cleaner.status],
-          ["Availability", cleaner.is_available ? "Available" : "Unavailable"],
-        ].map(([label, value]) => (
-          <div key={String(label)}>
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="font-medium">{value}</p>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-lg border p-3">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <MapPin className="size-4 text-blue-900" />
-          Live location
-        </p>
-        <p className="mt-1 text-sm font-medium">
-          <LocationDisplay
-            lat={cleaner.current_latitude}
-            lng={cleaner.current_longitude}
-            city={cleaner.service_area}
-            fallback="Location not provided"
-          />
-        </p>
-      </div>
-      <div className="rounded-lg border p-3">
-        <p className="text-sm font-medium">Skills & deliverable services</p>
-        <div className="mt-2 space-y-2">{cleaner.skills.map((skill) => <div key={skill.id}><Badge variant="outline">{skill.name}</Badge><p className="mt-1 text-xs text-muted-foreground">{skill.services.map((service) => service.name).join(", ") || "No services mapped"}</p></div>)}{!cleaner.skills.length && <p className="text-sm text-muted-foreground">No skills selected. This cleaner cannot be matched to bookings yet.</p>}</div>
-      </div>
-      {cleaner.stats && <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[["Total jobs", cleaner.stats.total_sessions], ["Completed", cleaner.stats.completed_sessions], ["Total earnings", earningsLabel], ["Rating", `${cleaner.stats.average_rating} / 5`]].map(([label, value]) => <div key={String(label)} className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value}</p></div>)}
-      </div>}
-      <Tabs defaultValue="jobs">
-        <TabsList className="grid w-full grid-cols-3"><TabsTrigger value="jobs">Jobs ({cleaner.job_history?.length ?? 0})</TabsTrigger><TabsTrigger value="payouts">Payouts ({cleaner.payout_history?.length ?? 0})</TabsTrigger><TabsTrigger value="audit">Audit ({cleaner.audit_history?.length ?? 0})</TabsTrigger></TabsList>
-        <TabsContent value="jobs" className="mt-3 space-y-2">{cleaner.job_history?.map((job) => <div key={job.booking_id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{job.service_name}{job.package_name ? ` · ${job.package_name}` : ""}</p><p className="text-xs text-muted-foreground">{new Date(job.scheduled_for).toLocaleString()}</p></div><Badge variant="secondary">{job.status.replaceAll("_", " ")}</Badge></div><p className="mt-2 flex items-center gap-1 text-muted-foreground"><MapPin className="size-3" />{[job.address_line, job.city].filter(Boolean).join(", ")}</p><p className="mt-1 text-xs text-muted-foreground">Booking {job.booking_id} · {job.currency} {Number(job.quoted_price).toLocaleString()}</p></div>)}{!cleaner.job_history?.length && <EmptyHistory label="No jobs recorded for this cleaner." />}</TabsContent>
-        <TabsContent value="payouts" className="mt-3 space-y-2">{cleaner.payout_history?.map((payout) => <div key={payout.payout_id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{payout.currency} {Number(payout.amount).toLocaleString()}</p><p className="text-xs text-muted-foreground">{payout.provider_reference || `Payout ${payout.payout_id}`}</p></div><Badge variant={payout.status === "paid" ? "success" : "secondary"}>{payout.status}</Badge></div><p className="mt-2 text-xs text-muted-foreground">Booking {payout.booking_id} · {new Date(payout.paid_at || payout.created_at).toLocaleString()}</p>{payout.note && <p className="mt-1 text-muted-foreground">{payout.note}</p>}</div>)}{!cleaner.payout_history?.length && <EmptyHistory label="No payouts recorded for this cleaner." />}</TabsContent>
-        <TabsContent value="audit" className="mt-3 space-y-2">{cleaner.audit_history?.map((event) => <div key={event.id} className="rounded-lg border p-3 text-sm"><div className="flex items-start justify-between gap-3"><p className="font-medium">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p><span className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-muted-foreground">By {event.actor_email || event.actor_user_id || "System"}</p>{event.details && <p className="mt-1 break-words text-xs text-muted-foreground">{JSON.stringify(event.details)}</p>}</div>)}{!cleaner.audit_history?.length && <EmptyHistory label="No cleaner audit events recorded yet." />}</TabsContent>
-      </Tabs>
-      {cleaner.recent_reviews?.length ? (
-        <div>
-          <h3 className="mb-2 font-medium">Recent reviews</h3>
-          <div className="space-y-2">
-            {cleaner.recent_reviews.map((review, index) => (
-              <div key={`${review.created_at}-${index}`} className="rounded-md border p-3 text-sm">
-                <p className="font-medium">{review.rating}/5</p>
-                <p className="text-muted-foreground">{review.review || "No written review"}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-2 border-t pt-4">
-        {can("cleaners.update") && <Button onClick={onEdit}>Edit profile</Button>}
-        {can("cleaner_availability.update") && (
-          <Button variant="outline" onClick={onAvailability}>
-            <Power className="mr-2 size-4" />
-            Availability
-          </Button>
-        )}
-        {can("schedules.read") && (
-          <Button variant="outline" onClick={onShifts}>
-            <CalendarDays className="mr-2 size-4" />
-            Shifts
-          </Button>
-        )}
-        {cleaner.status === "inactive"
-          ? can("cleaners.update") && (
-              <Button variant="outline" onClick={onReactivate}>
-                Reactivate
-              </Button>
-            )
-          : can("cleaners.delete") && (
-              <Button variant="destructive" onClick={onDeactivate}>
-                Deactivate
-              </Button>
-            )}
-      </div>
-    </div>
-  );
+  const [documents, setDocuments] = useState({
+    national_id: cleaner.national_id ?? "",
+    kra_pin: cleaner.kra_pin ?? "",
+    passport_number: cleaner.passport_number ?? "",
+    good_conduct_certificate_number: cleaner.good_conduct_certificate_number ?? "",
+    other_document_reference: cleaner.other_document_reference ?? "",
+  });
+  const [savingDocuments, setSavingDocuments] = useState(false);
+  const [documentMessage, setDocumentMessage] = useState<string | null>(null);
+  const [kycFiles, setKycFiles] = useState<Record<string, File | null>>({});
+  const [uploadingKyc, setUploadingKyc] = useState<string | null>(null);
+  const [kycUploadMessage, setKycUploadMessage] = useState<string | null>(null);
+  const legacyUploaded: Record<string, boolean> = {
+    identity: cleaner.has_identity_document,
+    kra: cleaner.has_kra_document,
+    "good-conduct": cleaner.has_good_conduct_document,
+    "reference-form": cleaner.has_reference_form,
+    contract: cleaner.has_contract,
+  };
+  const kycDocuments = kycDocumentTypes.map((document) => ({
+    ...document,
+    uploaded: legacyUploaded[document.code] ?? (cleaner.custom_kyc_document_types ?? []).includes(document.code),
+  }));
+  const uploadSelectedKyc = async (type: string) => {
+    const file = kycFiles[type];
+    if (!file) return;
+    setUploadingKyc(type);
+    setKycUploadMessage(null);
+    try {
+      await onUploadKycFile(type, file);
+      setKycFiles((current) => ({ ...current, [type]: null }));
+      setKycUploadMessage("KYC document uploaded.");
+    } catch (cause) {
+      setKycUploadMessage(cause instanceof Error ? cause.message : "Unable to upload KYC document.");
+    } finally {
+      setUploadingKyc(null);
+    }
+  };
+  const saveDocumentDetails = async (event: FormEvent) => {
+    event.preventDefault();
+    setSavingDocuments(true);
+    setDocumentMessage(null);
+    try {
+      await onSaveDocuments(cleaner.id, {
+        national_id: documents.national_id.trim() || null,
+        kra_pin: documents.kra_pin.trim() || null,
+        passport_number: documents.passport_number.trim() || null,
+        good_conduct_certificate_number: documents.good_conduct_certificate_number.trim() || null,
+        other_document_reference: documents.other_document_reference.trim() || null,
+      });
+      setDocumentMessage("Document details saved.");
+    } catch (cause) {
+      setDocumentMessage(cause instanceof Error ? cause.message : "Unable to save document details.");
+    } finally {
+      setSavingDocuments(false);
+    }
+  };
+  return <div className="space-y-5">
+    <Tabs defaultValue={initialTab} className="space-y-4">
+      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+        <TabsTrigger value="profile" className="gap-2 py-2.5"><ShieldCheck className="size-4" />Profile</TabsTrigger>
+        <TabsTrigger value="skills" className="gap-2 py-2.5"><Sparkles className="size-4" />Skills</TabsTrigger>
+        <TabsTrigger value="documents" className="gap-2 py-2.5"><FileText className="size-4" />Documents</TabsTrigger>
+        <TabsTrigger value="history" className="gap-2 py-2.5"><BriefcaseBusiness className="size-4" />Jobs &amp; Payouts</TabsTrigger>
+      </TabsList>
+      <TabsContent value="profile" className="mt-0 space-y-4">
+        <Card className="p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Cleaner details</h3><p className="mt-1 text-sm text-muted-foreground">Contact, service area, and current work status.</p></div><Badge className={cleanerActivity(cleaner).className}>{cleanerActivity(cleaner).label}</Badge></div>
+          <CleanerAvatar cleaner={cleaner} placeholderUrl={placeholderUrl} large />
+          <div className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">{[["Phone", cleaner.phone], ["Service area", cleaner.service_area], ["Rating", cleaner.rating ?? "—"], ["Availability", cleaner.is_available ? "Available" : "Unavailable"], ["Joined", new Date(cleaner.created_at).toLocaleDateString()]].map(([label, value]) => <div key={String(label)}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}<div><p className="text-xs text-muted-foreground">Last completed job</p><p className="mt-1 font-medium">{cleaner.last_completed_job_at ? new Date(cleaner.last_completed_job_at).toLocaleString() : "No completed jobs yet"}</p></div></div>
+        </Card>
+        <Card className="p-4 sm:p-5"><h3 className="flex items-center gap-2 font-semibold"><MapPin className="size-4 text-blue-700" />Live location</h3><p className="mt-2 text-sm font-medium"><LocationDisplay lat={cleaner.current_latitude} lng={cleaner.current_longitude} city={cleaner.service_area} fallback="Location not provided" /></p></Card>
+        {cleaner.stats && <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Total jobs", cleaner.stats.total_sessions], ["Completed", cleaner.stats.completed_sessions], ["Total earnings", earningsLabel], ["Rating", `${cleaner.stats.average_rating} / 5`]].map(([label, value]) => <Card key={String(label)} className="p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value}</p></Card>)}</div>}
+        {cleaner.recent_reviews?.length ? <Card className="p-4"><h3 className="font-semibold">Recent reviews</h3><div className="mt-3 space-y-2">{cleaner.recent_reviews.map((review, index) => <div key={`${review.created_at}-${index}`} className="rounded-md border p-3 text-sm"><div className="flex justify-between gap-2"><p className="font-medium">{review.rating}/5</p><span className="text-xs text-muted-foreground">{new Date(review.created_at).toLocaleDateString()}</span></div><p className="mt-1 text-muted-foreground">{review.review || "No written review"}</p></div>)}</div></Card> : null}
+      </TabsContent>
+      <TabsContent value="skills" className="mt-0 space-y-3"><div><h3 className="font-semibold">Skills &amp; services</h3><p className="mt-1 text-sm text-muted-foreground">Service types this cleaner can be matched to.</p></div>
+        {cleaner.skills.length ? cleaner.skills.map((skill) => <Card key={skill.id} className="p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><h4 className="font-medium">{skill.name}</h4><p className="mt-1 text-sm text-muted-foreground">{skill.description || "No skill description"}</p></div><Badge variant={skill.is_active ? "success" : "secondary"}>{skill.is_active ? "Active" : "Inactive"}</Badge></div><div className="mt-3 flex flex-wrap gap-2">{skill.services.map((service) => <Badge key={service.id} variant="outline">{service.name}</Badge>)}{!skill.services.length && <span className="text-sm text-muted-foreground">No services mapped</span>}</div></Card>) : <EmptyHistory label="No skills have been assigned to this cleaner yet." />}
+      </TabsContent>
+      <TabsContent value="documents" className="mt-0 space-y-4"><Card className="p-4 sm:p-5"><div className="flex items-start gap-3"><span className="rounded-xl bg-blue-50 p-2.5 text-blue-700"><FileText className="size-5" /></span><div><h3 className="font-semibold">Configured documents</h3><p className="mt-1 text-sm text-muted-foreground">Required and optional documents set by your administrator. Files are stored privately.</p></div></div>
+        {cleaner.has_kyc_document && !cleaner.has_identity_document && !cleaner.has_kra_document && !cleaner.has_good_conduct_document && !cleaner.has_reference_form && !cleaner.has_contract && !(cleaner.custom_kyc_document_types?.length) && <div className="mt-4 flex items-center justify-between rounded-lg border p-3"><p className="text-sm">Existing KYC file</p>{can("cleaners.read") && <Button type="button" size="sm" variant="outline" onClick={onViewLegacyKycDocument}>View existing file</Button>}</div>}
+        <div className="mt-4 grid gap-3">{kycDocuments.map((document) => <div key={document.code} className="rounded-lg border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium">{document.label} <span className="text-xs font-normal text-muted-foreground">{document.required ? "Required" : "Optional"}</span></p><p className="text-xs text-muted-foreground">{document.uploaded ? "Submitted" : "Not submitted"}</p></div>{document.uploaded && can("cleaners.read") && <Button type="button" size="sm" variant="outline" onClick={() => onViewKycFile(document.code)}><FileText className="mr-2 size-4" />View</Button>}</div>
+          {(document.uploaded || kycFiles[document.code]) && <KycDocumentPreview cleanerId={cleaner.id} type={document.code} uploaded={document.uploaded} file={kycFiles[document.code] ?? null} />}
+          {can("cleaners.update") && <div className="mt-3 flex flex-wrap items-center gap-2"><Input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file && !isUploadWithinLimit(file, MEDIA_UPLOAD_MAX_BYTES, "KYC document")) { event.currentTarget.value = ""; setKycFiles((current) => ({ ...current, [document.code]: null })); return; } setKycFiles((current) => ({ ...current, [document.code]: file })); }} /><Button type="button" size="sm" disabled={!kycFiles[document.code] || uploadingKyc !== null} onClick={() => void uploadSelectedKyc(document.code)}>{uploadingKyc === document.code ? "Uploading…" : document.uploaded ? "Replace file" : "Upload file"}</Button><span className="text-xs text-muted-foreground">PDF or image; up to 10 MB.</span></div>}
+        </div>)}</div>{kycUploadMessage && <p role="status" className="mt-3 text-sm">{kycUploadMessage}</p>}
+        <div className="mt-4">{cleaner.profile_photo_url && <a href={cleaner.profile_photo_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary underline underline-offset-4">View cleaner photo</a>}</div>
+      </Card><Card className="p-4 sm:p-5"><div className="flex items-start gap-3"><span className="rounded-xl bg-blue-50 p-2.5 text-blue-700"><FileText className="size-5" /></span><div><h3 className="font-semibold">KYC document details</h3><p className="mt-1 text-sm text-muted-foreground">Document numbers and references.</p></div></div>
+        <form className="mt-5 space-y-4" onSubmit={saveDocumentDetails}><div className="grid gap-4 sm:grid-cols-2">{([["National ID number", "national_id", "Enter national ID number"], ["KRA PIN", "kra_pin", "Enter KRA PIN"], ["Passport number", "passport_number", "Optional"], ["Certificate of Good Conduct reference", "good_conduct_certificate_number", "Certificate or application reference"], ["Other document reference", "other_document_reference", "Optional reference"]] as const).map(([label, key, placeholder]) => <div key={key} className="space-y-2"><Label htmlFor={`cleaner-${key}`}>{label}</Label><Input id={`cleaner-${key}`} value={documents[key] ?? ""} placeholder={placeholder} disabled={!can("cleaners.update")} onChange={(event) => setDocuments((current) => ({ ...current, [key]: event.target.value }))} /></div>)}</div>
+          {documentMessage && <p role="status" className={`text-sm ${documentMessage.includes("saved") ? "text-emerald-700" : "text-destructive"}`}>{documentMessage}</p>}{can("cleaners.update") && <div className="flex justify-end"><Button type="submit" disabled={savingDocuments}>{savingDocuments ? <RefreshCw className="mr-2 size-4 animate-spin" /> : <FileText className="mr-2 size-4" />}{savingDocuments ? "Saving…" : "Save document details"}</Button></div>}
+        </form></Card>
+      </TabsContent>
+      <TabsContent value="history" className="mt-0 space-y-4"><div><h3 className="font-semibold">Jobs &amp; payouts</h3><p className="mt-1 text-sm text-muted-foreground">Review completed work, payout progress, and change history.</p></div>
+        <div className="grid gap-2 sm:grid-cols-3"><Card className="p-3"><p className="text-xs text-muted-foreground">Jobs</p><p className="mt-1 text-xl font-semibold">{cleaner.job_history?.length ?? 0}</p></Card><Card className="p-3"><p className="text-xs text-muted-foreground">Paid payouts</p><p className="mt-1 text-xl font-semibold">{cleaner.stats?.paid_payouts ?? 0}</p></Card><Card className="p-3"><p className="text-xs text-muted-foreground">Pending payouts</p><p className="mt-1 text-xl font-semibold">{cleaner.stats?.pending_payouts ?? 0}</p></Card></div>
+        <Tabs defaultValue="jobs"><TabsList className="grid w-full grid-cols-3"><TabsTrigger value="jobs">Jobs ({cleaner.job_history?.length ?? 0})</TabsTrigger><TabsTrigger value="payouts">Payouts ({cleaner.payout_history?.length ?? 0})</TabsTrigger><TabsTrigger value="audit">Audit ({cleaner.audit_history?.length ?? 0})</TabsTrigger></TabsList>
+          <TabsContent value="jobs" className="mt-3 space-y-2">{cleaner.job_history?.map((job) => <Card key={job.booking_id} className="p-4 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{job.service_name}{job.package_name ? ` · ${job.package_name}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(job.scheduled_for).toLocaleString()}</p></div><Badge variant="secondary">{job.status.replaceAll("_", " ")}</Badge></div><p className="mt-2 flex items-center gap-1 text-muted-foreground"><MapPin className="size-3" />{[job.address_line, job.city].filter(Boolean).join(", ")}</p><p className="mt-1 text-xs text-muted-foreground">Booking {job.booking_id} · {job.currency} {Number(job.quoted_price).toLocaleString()}</p></Card>)}{!cleaner.job_history?.length && <EmptyHistory label="No jobs recorded for this cleaner." />}</TabsContent>
+          <TabsContent value="payouts" className="mt-3 space-y-2">{cleaner.payout_history?.map((payout) => <Card key={payout.payout_id} className="p-4 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{payout.currency} {Number(payout.amount).toLocaleString()}</p><p className="mt-1 text-xs text-muted-foreground">{payout.provider_reference || `Payout ${payout.payout_id}`}</p></div><Badge variant={payout.status === "paid" ? "success" : "secondary"}>{payout.status}</Badge></div><p className="mt-2 text-xs text-muted-foreground">Booking {payout.booking_id} · {new Date(payout.paid_at || payout.created_at).toLocaleString()}</p>{payout.note && <p className="mt-1 text-muted-foreground">{payout.note}</p>}</Card>)}{!cleaner.payout_history?.length && <EmptyHistory label="No payouts recorded for this cleaner." />}</TabsContent>
+          <TabsContent value="audit" className="mt-3 space-y-2">{cleaner.audit_history?.map((event) => <Card key={event.id} className="p-4 text-sm"><div className="flex items-start justify-between gap-3"><p className="font-medium">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p><span className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-muted-foreground">By {event.actor_email || event.actor_user_id || "System"}</p>{event.details && <p className="mt-1 break-words text-xs text-muted-foreground">{JSON.stringify(event.details)}</p>}</Card>)}{!cleaner.audit_history?.length && <EmptyHistory label="No cleaner audit events recorded yet." />}</TabsContent>
+        </Tabs>
+      </TabsContent>
+    </Tabs>
+    <div className="flex flex-wrap gap-2 border-t pt-4">{can("cleaners.update") && <Button onClick={onEdit}>Edit profile</Button>}{can("cleaner_availability.update") && <Button variant="outline" onClick={onAvailability}><Power className="mr-2 size-4" />Availability</Button>}{can("schedules.read") && <Button variant="outline" onClick={onShifts}><CalendarDays className="mr-2 size-4" />Shifts</Button>}{cleaner.status === "inactive" ? can("cleaners.update") && <Button variant="outline" onClick={onReactivate}>Reactivate</Button> : can("cleaners.delete") && <Button variant="destructive" onClick={onDeactivate}>Deactivate</Button>}</div>
+  </div>;
 }
+
+function KycDocumentPreview({ cleanerId, type, uploaded, file }: {
+  cleanerId: string;
+  type: string;
+  uploaded: boolean;
+  file: File | null;
+}) {
+  const [preview, setPreview] = useState<{ url: string; contentType: string } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    setPreview(null);
+    setFailed(false);
+    const load = file
+      ? Promise.resolve(file)
+      : uploaded
+        ? cleanersApi.getKycFilePreview(cleanerId, type)
+        : Promise.resolve(null);
+    void load.then((blob) => {
+      if (!blob || !active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPreview({ url: objectUrl, contentType: blob.type || file?.type || "" });
+    }).catch(() => {
+      if (active) setFailed(true);
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [cleanerId, file, type, uploaded]);
+
+  return <div className="mt-3 flex min-h-16 items-center gap-3 rounded-md bg-muted/40 p-2">
+    {preview?.contentType.startsWith("image/") ? <img src={preview.url} alt={`${type} document preview`} className="h-16 w-14 rounded border bg-background object-cover" />
+      : preview?.contentType === "application/pdf" ? <iframe title={`${type} PDF preview`} src={preview.url} className="h-24 w-20 overflow-hidden rounded border bg-background" />
+        : <div className="flex h-16 w-14 items-center justify-center rounded border bg-background text-muted-foreground"><FileText className="size-6" /></div>}
+    <p className="text-xs text-muted-foreground">{preview ? (file ? file.name : "Uploaded document preview") : failed ? "Preview unavailable" : "Loading preview…"}</p>
+  </div>;
+}
+
 function ShiftManager({
   shifts,
   form,
@@ -810,8 +1018,31 @@ function MultiSelect({
   if (!options.length) return <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{emptyLabel}</p>;
   const selectableIds = options.filter((option) => !option.disabled || selected.includes(option.id)).map((option) => option.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.includes(id));
-  return <div className="rounded-md border"><div className="flex items-center justify-between border-b px-3 py-2"><span className="text-xs text-muted-foreground">{selected.length} selected</span><div className="flex gap-1"><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={allSelected} onClick={() => onChange([...new Set([...selected, ...selectableIds])])}>Select all</Button><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!selected.length} onClick={() => onChange([])}>Clear</Button></div></div><div className="max-h-44 space-y-2 overflow-y-auto p-3">{options.map((option) => {
+  return <div className="rounded-md border"><div className="flex items-center justify-between border-b px-3 py-2"><span className="text-xs text-muted-foreground">{selected.length} selected</span><div className="flex gap-1"><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={allSelected} onClick={() => onChange([...new Set([...selected, ...selectableIds])])}>Select all</Button><Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!selected.length} onClick={() => onChange([])}>Clear</Button></div></div><div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto p-2 sm:grid-cols-2">{options.map((option) => {
     const checked = selected.includes(option.id);
-    return <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm"><Checkbox checked={checked} disabled={option.disabled && !checked} onCheckedChange={(value) => onChange(value ? [...selected, option.id] : selected.filter((id) => id !== option.id))} /><span className={option.disabled ? "text-muted-foreground" : ""}>{option.label}{option.disabled ? " (inactive)" : ""}</span></label>;
+    return <label key={option.id} className="flex min-w-0 cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-xs"><Checkbox checked={checked} disabled={option.disabled && !checked} onCheckedChange={(value) => onChange(value ? [...selected, option.id] : selected.filter((id) => id !== option.id))} /><span className={`truncate ${option.disabled ? "text-muted-foreground" : ""}`}>{option.label}{option.disabled ? " (inactive)" : ""}</span></label>;
   })}</div></div>;
+}
+
+function CleanerAvatar({ cleaner, placeholderUrl, large = false }: { cleaner: Cleaner; placeholderUrl: string | null; large?: boolean }) {
+  const initials = cleaner.full_name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "C";
+  const photoUrl = useCleanerPhotoUrl(cleaner.id, cleaner.profile_photo_url);
+  return <Avatar className={large ? "mt-4 size-24 rounded-xl" : "size-10"}>
+    <AvatarImage src={(cleaner.profile_photo_url ? photoUrl : placeholderUrl) ?? undefined} alt={`${cleaner.full_name} profile`} />
+    <AvatarFallback>{initials}</AvatarFallback>
+  </Avatar>;
+}
+
+function useCleanerPhotoUrl(cleanerId: string | null, storedPhotoUrl: string | null) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setSignedUrl(null);
+    if (!cleanerId || !storedPhotoUrl) return () => { active = false; };
+    void cleanersApi.photoUrl(cleanerId)
+      .then(({ url }) => { if (active) setSignedUrl(url); })
+      .catch(() => { if (active) setSignedUrl(null); });
+    return () => { active = false; };
+  }, [cleanerId, storedPhotoUrl]);
+  return signedUrl ?? storedPhotoUrl;
 }

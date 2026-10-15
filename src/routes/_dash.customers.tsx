@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { paymentsApi, usersApi, type AdminUserDetails, type ApiUser, type Payment, type UserActivity } from "@/lib/api";
 import { LocationDisplay } from "@/components/location-display";
 import { LocationPicker, type LocationPickerValue } from "@/components/location-picker";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export const Route = createFileRoute("/_dash/customers")({ component: ClientsPage });
 
@@ -29,6 +30,7 @@ function ClientsPage() {
   const [activity, setActivity] = useState<UserActivity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [banReason, setBanReason] = useState("");
+  const [placeholderUrl, setPlaceholderUrl] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -41,6 +43,7 @@ function ClientsPage() {
 
   useEffect(() => {
     void load();
+    void usersApi.clientPlaceholder().then(({ url }) => setPlaceholderUrl(url)).catch(() => {});
   }, []);
 
   const filtered = useMemo(
@@ -111,6 +114,7 @@ function ClientsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-14">#</TableHead>
+              <TableHead className="w-16">Photo</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Phone</TableHead>
@@ -125,6 +129,7 @@ function ClientsPage() {
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {String((page - 1) * pageSize + index + 1).padStart(2, "0")}
                 </TableCell>
+                <TableCell><ClientAvatar user={user} placeholderUrl={placeholderUrl} /></TableCell>
                 <TableCell className="font-medium">{user.full_name}</TableCell>
                 <TableCell>{user.email ?? "—"}</TableCell>
                 <TableCell>{user.phone ?? "—"}</TableCell>
@@ -174,7 +179,7 @@ function ClientsPage() {
             ))}
             {!visibleUsers.length && (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
                   No clients match your search.
                 </TableCell>
               </TableRow>
@@ -216,6 +221,7 @@ function ClientsPage() {
               user={details?.user ?? selected}
               details={details}
               can={can}
+              placeholderUrl={placeholderUrl}
               banReason={banReason}
               setBanReason={setBanReason}
               mutate={mutate}
@@ -238,6 +244,7 @@ function ClientsPage() {
 function Details({
   user,
   details,
+  placeholderUrl,
   can,
   banReason,
   setBanReason,
@@ -246,6 +253,7 @@ function Details({
 }: {
   user: ApiUser;
   details: AdminUserDetails | null;
+  placeholderUrl: string | null;
   can: (...permissions: string[]) => boolean;
   banReason: string;
   setBanReason: (value: string) => void;
@@ -254,6 +262,7 @@ function Details({
 }) {
   return (
     <div className="space-y-5">
+      <div className="flex items-center gap-4 rounded-lg border p-4"><ClientAvatar user={user} placeholderUrl={placeholderUrl} large /><div><h2 className="font-semibold">{user.full_name}</h2><p className="text-sm text-muted-foreground">{user.email ?? user.phone ?? "Client account"}</p></div></div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         {[
           ["Full name", user.full_name],
@@ -362,6 +371,14 @@ function Details({
       )}
     </div>
   );
+}
+
+function ClientAvatar({ user, placeholderUrl, large = false }: { user: ApiUser; placeholderUrl: string | null; large?: boolean }) {
+  const initials = user.full_name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "C";
+  return <Avatar className={large ? "size-20" : "size-10"}>
+    <AvatarImage src={user.profile_photo_url ?? placeholderUrl ?? undefined} alt={`${user.full_name} profile`} />
+    <AvatarFallback>{initials}</AvatarFallback>
+  </Avatar>;
 }
 
 function CustomerPayments({ customerId }: { customerId: string }) {

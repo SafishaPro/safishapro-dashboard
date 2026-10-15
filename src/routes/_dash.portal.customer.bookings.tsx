@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { customerBookings } from "@/lib/mock-data";
-import { StatusBadge } from "./_dash.dashboard";
+import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_dash/portal/customer/bookings")({ component: CustBookingsPage });
 
@@ -25,7 +25,7 @@ function CustBookingsPage() {
                 <TableCell className="font-medium">{b.service}</TableCell>
                 <TableCell>{b.cleaner}</TableCell>
                 <TableCell>{b.date}</TableCell>
-                <TableCell><StatusBadge status={b.status} /></TableCell>
+                <TableCell><Badge variant={b.status === "Completed" ? "success" : b.status === "Cancelled" ? "destructive" : "secondary"}>{b.status}</Badge></TableCell>
                 <TableCell className="text-right">KES {b.amount.toLocaleString()}</TableCell>
               </TableRow>
             ))}

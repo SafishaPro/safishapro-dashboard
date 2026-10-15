@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bookings } from "@/lib/mock-data";
-import { StatusBadge } from "./_dash.dashboard";
+import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/_dash/portal/cleaner/jobs")({ component: JobsPage });
 
@@ -24,7 +24,7 @@ function JobsPage() {
                 <TableCell>{b.customer}</TableCell>
                 <TableCell>{b.service}</TableCell>
                 <TableCell>{b.date}</TableCell>
-                <TableCell><StatusBadge status={b.status} /></TableCell>
+                <TableCell><Badge variant={b.status === "Completed" ? "success" : b.status === "Cancelled" ? "destructive" : "secondary"}>{b.status}</Badge></TableCell>
                 <TableCell className="text-right">KES {Math.round(b.amount * 0.7).toLocaleString()}</TableCell>
               </TableRow>
             ))}

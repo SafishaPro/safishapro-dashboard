@@ -25,6 +25,7 @@ import { Route as DashPaymentsRouteImport } from './routes/_dash.payments'
 import { Route as DashPayoutsRouteImport } from './routes/_dash.payouts'
 import { Route as DashProfileRouteImport } from './routes/_dash.profile'
 import { Route as DashPropertyTypesRouteImport } from './routes/_dash.property-types'
+import { Route as DashRegistrationFieldsRouteImport } from './routes/_dash.registration-fields'
 import { Route as DashRolesRouteImport } from './routes/_dash.roles'
 import { Route as DashServicesRouteImport } from './routes/_dash.services'
 import { Route as DashSettingsRouteImport } from './routes/_dash.settings'
@@ -117,6 +118,11 @@ const DashPropertyTypesRoute = DashPropertyTypesRouteImport.update({
   path: '/property-types',
   getParentRoute: () => DashRoute,
 } as any)
+const DashRegistrationFieldsRoute = DashRegistrationFieldsRouteImport.update({
+  id: '/registration-fields',
+  path: '/registration-fields',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashRolesRoute = DashRolesRouteImport.update({
   id: '/roles',
   path: '/roles',
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/payouts': typeof DashPayoutsRoute
   '/profile': typeof DashProfileRoute
   '/property-types': typeof DashPropertyTypesRoute
+  '/registration-fields': typeof DashRegistrationFieldsRoute
   '/roles': typeof DashRolesRoute
   '/services': typeof DashServicesRoute
   '/settings': typeof DashSettingsRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/payouts': typeof DashPayoutsRoute
   '/profile': typeof DashProfileRoute
   '/property-types': typeof DashPropertyTypesRoute
+  '/registration-fields': typeof DashRegistrationFieldsRoute
   '/roles': typeof DashRolesRoute
   '/services': typeof DashServicesRoute
   '/settings': typeof DashSettingsRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/_dash/payouts': typeof DashPayoutsRoute
   '/_dash/profile': typeof DashProfileRoute
   '/_dash/property-types': typeof DashPropertyTypesRoute
+  '/_dash/registration-fields': typeof DashRegistrationFieldsRoute
   '/_dash/roles': typeof DashRolesRoute
   '/_dash/services': typeof DashServicesRoute
   '/_dash/settings': typeof DashSettingsRoute
@@ -290,6 +299,7 @@ export interface FileRouteTypes {
     | '/payouts'
     | '/profile'
     | '/property-types'
+    | '/registration-fields'
     | '/roles'
     | '/services'
     | '/settings'
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | '/payouts'
     | '/profile'
     | '/property-types'
+    | '/registration-fields'
     | '/roles'
     | '/services'
     | '/settings'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/_dash/payouts'
     | '/_dash/profile'
     | '/_dash/property-types'
+    | '/_dash/registration-fields'
     | '/_dash/roles'
     | '/_dash/services'
     | '/_dash/settings'
@@ -483,6 +495,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashPropertyTypesRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/registration-fields': {
+      id: '/_dash/registration-fields'
+      path: '/registration-fields'
+      fullPath: '/registration-fields'
+      preLoaderRoute: typeof DashRegistrationFieldsRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/roles': {
       id: '/_dash/roles'
       path: '/roles'
@@ -584,6 +603,7 @@ interface DashRouteChildren {
   DashPayoutsRoute: typeof DashPayoutsRoute
   DashProfileRoute: typeof DashProfileRoute
   DashPropertyTypesRoute: typeof DashPropertyTypesRoute
+  DashRegistrationFieldsRoute: typeof DashRegistrationFieldsRoute
   DashRolesRoute: typeof DashRolesRoute
   DashServicesRoute: typeof DashServicesRoute
   DashSettingsRoute: typeof DashSettingsRoute
@@ -612,6 +632,7 @@ const DashRouteChildren: DashRouteChildren = {
   DashPayoutsRoute: DashPayoutsRoute,
   DashProfileRoute: DashProfileRoute,
   DashPropertyTypesRoute: DashPropertyTypesRoute,
+  DashRegistrationFieldsRoute: DashRegistrationFieldsRoute,
   DashRolesRoute: DashRolesRoute,
   DashServicesRoute: DashServicesRoute,
   DashSettingsRoute: DashSettingsRoute,

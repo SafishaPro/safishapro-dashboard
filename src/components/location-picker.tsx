@@ -22,6 +22,7 @@ interface LocationPickerProps {
   placeholder?: string;
   showMapDefault?: boolean;
   mapSelectionOnly?: boolean;
+  showCoordinates?: boolean;
 }
 
 // Default center: Nairobi, Kenya
@@ -37,6 +38,7 @@ export function LocationPicker({
   placeholder = "Search location, area, or address…",
   showMapDefault = true,
   mapSelectionOnly = false,
+  showCoordinates = true,
 }: LocationPickerProps) {
   const selectionVersion = useRef(0);
   const onChangeRef = useRef(onChange);
@@ -326,8 +328,8 @@ export function LocationPicker({
         </div>
       )}
 
-      {/* Coordinates and Resolved Location Summary */}
-      <div className="grid grid-cols-2 gap-2 pt-1">
+      {/* Coordinate inputs can be hidden while the selected pin is still returned to the caller. */}
+      {showCoordinates && <div className="grid grid-cols-2 gap-2 pt-1">
         <div>
           <Label className="text-xs text-muted-foreground">Latitude</Label>
           <Input
@@ -352,7 +354,7 @@ export function LocationPicker({
             onChange={(e) => handleManualCoordChange("lng", e.target.value)}
           />
         </div>
-      </div>
+      </div>}
 
       {resolvedCity && (
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-0.5">

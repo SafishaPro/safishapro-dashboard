@@ -1,16 +1,30 @@
 import { toast } from "sonner";
 
-const configuredApiUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
-const API_BASE_URL = configuredApiUrl.endsWith("/api/v1")
-  ? configuredApiUrl
-  : `${configuredApiUrl}/api/v1`;
-const USES_NGROK_FREE_TUNNEL = /^https:\/\/[^/]+\.ngrok-free\.dev(?:\/|$)/i.test(API_BASE_URL);
+// Keep API requests on the dashboard origin. The dev-server and hosting
+// rewrites proxy this path to the API, avoiding browser CORS checks.
+const configuredApiOrigin = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_BASE_URL as string | undefined)
+      ?.trim()
+      .replace(/\/+$/, "")
+  : undefined;
+const API_BASE_URL = configuredApiOrigin
+  ? `${configuredApiOrigin}/api/v1`
+  : "/api/v1";
 const SESSION_KEY = "safishapro_admin_session";
+export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const MEDIA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+export function isUploadWithinLimit(file: File, maxBytes: number, label: string) {
+  if (file.size <= maxBytes) return true;
+  const maxMegabytes = Math.floor(maxBytes / (1024 * 1024));
+  toast.error(`${label} must be ${maxMegabytes} MB or smaller.`);
+  return false;
+}
 
 export function dispatchLiveUrl() {
   const session = getStoredSession();
   if (!session?.access_token) return null;
-  const url = new URL(`${API_BASE_URL}/bookings/dispatch/live`);
+  const url = new URL(`${API_BASE_URL}/bookings/dispatch/live`, window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("token", session.access_token);
   return url.toString();
@@ -48,6 +62,11 @@ export type ApiUser = {
   phone_verified: boolean;
   email_verified: boolean;
   profile_photo_url: string | null;
+  has_reference_form: boolean;
+  has_contract: boolean;
+  has_identity_document: boolean;
+  has_kra_document: boolean;
+  has_good_conduct_document: boolean;
   last_login_at: string | null;
   gender: "male" | "female" | "non_binary" | "other" | "prefer_not_to_say" | null;
   nationality: string | null;
@@ -57,11 +76,19 @@ export type ApiUser = {
   address_description: string | null;
   city: string | null;
   preferred_language: string | null;
+  registration_data: Record<string, unknown>;
   password_set: boolean;
   profile_complete: boolean;
-  missing_required_fields: string[];
+  missing_required_fields: MissingRegistrationField[];
   created_at: string;
   updated_at: string;
+};
+export type MissingRegistrationField = {
+  field: string;
+  label: string;
+  input_type: string;
+  required: boolean;
+  options: string[];
 };
 export type PropertyTypeField = {
   key: string;
@@ -79,6 +106,17 @@ export type PropertyType = {
   created_at: string;
   updated_at: string;
 };
+export type RegistrationField = {
+  id: string;
+  key: string;
+  label: string;
+  input_type: "text" | "email" | "number" | "date" | "boolean" | "single_choice" | "multiple_choice" | "password";
+  required: boolean;
+  options: string[];
+  help_text: string | null;
+  position: number;
+  is_active: boolean;
+};
 export type TokenData = {
   user_id: string;
   access_token: string;
@@ -87,7 +125,7 @@ export type TokenData = {
   app_type?: "web" | "mobile";
   expires_in_seconds: number;
   profile_complete: boolean;
-  missing_required_fields: string[];
+  missing_required_fields: MissingRegistrationField[];
   role: ApiUser["role"];
   permissions: Permission[];
   user: ApiUser;
@@ -193,23 +231,22 @@ export type DecisionKpi = {
 };
 export type DecisionPoint = { date: string; value: number; [key: string]: unknown };
 export type DecisionSection = {
-  kpis?: DecisionKpi[] | Record<string, DecisionKpi | number | string | null>;
-  series?:
-    | Record<string, DecisionPoint[]>
-    | Array<{ key?: string; label?: string; points?: DecisionPoint[] }>;
-  breakdowns?: Record<string, unknown> | Array<Record<string, unknown>>;
-  [key: string]: unknown;
+  key: "bookings" | "payments" | "finance" | "operations";
+  title: string;
+  decision_use: string;
+  kpis: DecisionKpi[];
+  series: Array<{ key: string; label: string; unit: string | null; points: DecisionPoint[] }>;
+  breakdowns: Array<{ key: string; label: string; value: number; percentage: number | null }>;
 };
 export type DecisionSummary = {
-  start_date?: string;
-  end_date?: string;
-  comparison_start_date?: string;
-  comparison_end_date?: string;
-  bookings?: DecisionSection;
-  payments?: DecisionSection;
-  finance?: DecisionSection;
-  operations?: DecisionSection;
-  [key: string]: unknown;
+  start_date: string;
+  end_date: string;
+  comparison_start_date: string;
+  comparison_end_date: string;
+  currency: string | null;
+  granularity: "daily" | "weekly" | "monthly";
+  sections: DecisionSection[];
+  limitations: string[];
 };
 export type Booking = {
   id: string;
@@ -230,6 +267,8 @@ export type Booking = {
   currency: string;
   city: string | null;
   address_line: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   special_instructions: string | null;
   additional_notes?: string | null;
   property_size?: string | null;
@@ -242,6 +281,11 @@ export type Booking = {
   status_events: Array<{ created_at: string; status?: string; from_status?: string | null; to_status?: string | null; note: string | null }>;
 };
 export type Payment = {
+  gateway_environment?: "sandbox" | "production" | null;
+  reconciliation_required?: boolean;
+  payment_channel?: string;
+  wallet_amount?: string | number;
+  external_amount?: string | number;
   id: string;
   payment_number: string;
   booking_id: string;
@@ -326,6 +370,7 @@ export type ServicePackage = {
   currency: string;
   pricing_model: string;
   billing_cycle: string;
+  category?: string | null;
   visits_per_cycle?: number | null;
   commitment_cycles?: number | null;
   included_items?: string[];
@@ -354,6 +399,7 @@ export type Service = {
   name: string;
   slug: string;
   description: string | null;
+  image_url: string | null;
   base_price: string | number;
   estimated_duration_minutes: number;
   is_active: boolean;
@@ -376,11 +422,24 @@ export type Cleaner = {
   user_id: string | null;
   full_name: string;
   phone: string;
-  national_id: string;
+  national_id: string | null;
+  kra_pin: string | null;
+  passport_number: string | null;
+  good_conduct_certificate_number: string | null;
+  other_document_reference: string | null;
+  profile_photo_url: string | null;
+  has_kyc_document: boolean;
+  has_identity_document: boolean;
+  has_kra_document: boolean;
+  has_good_conduct_document: boolean;
+  has_reference_form: boolean;
+  has_contract: boolean;
+  custom_kyc_document_types?: string[];
   service_area: string;
   skill_ids: string[];
   skills: CleanerSkill[];
   status: "active" | "inactive" | "suspended";
+  last_completed_job_at?: string | null;
   is_available: boolean;
   current_latitude: number | null;
   current_longitude: number | null;
@@ -436,6 +495,7 @@ export type Cleaner = {
     created_at: string;
   }>;
 };
+export type CleanerKycDocumentType = { code: string; label: string; required: boolean; is_active: boolean; position: number };
 export type Subscription = {
   subscription_name: string;
   customer_name: string;
@@ -455,6 +515,20 @@ export type Subscription = {
   session_days_of_month: number[];
   visit_count: number;
   commitment_total: number | null;
+};
+export type SubscriptionDetails = {
+  subscription: Subscription;
+  sessions: Booking[];
+  session_count: number;
+  commitment_total: string | number;
+};
+export type SubscriptionPage = {
+  subscriptions: Subscription[];
+  status_counts: Record<string, number>;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 };
 type ApiEnvelope<T> = { isSucces: boolean; message: string; data: T };
 export class ApiError extends Error {
@@ -516,8 +590,9 @@ async function request<T>(
       ...init,
       headers: {
         Accept: "application/json",
-        ...(USES_NGROK_FREE_TUNNEL ? { "ngrok-skip-browser-warning": "true" } : {}),
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.body && !(typeof FormData !== "undefined" && init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...(authenticated && session ? { Authorization: `Bearer ${session.access_token}` } : {}),
         ...headers,
       },
@@ -555,6 +630,36 @@ const json = (method: string, body?: unknown) => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
 });
+
+async function authenticatedFileBlob(path: string) {
+  let session = getStoredSession();
+  if (!session) throw new ApiError(401, "Please sign in to view this document.");
+  if (session.refresh_token && session.expires_at - Date.now() < 60_000) {
+    await authApi.refresh(session.refresh_token);
+    session = getStoredSession();
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiEnvelope<unknown> | null;
+    throw new ApiError(response.status, payload?.message ?? "Unable to open this document.");
+  }
+  return response.blob();
+}
+
+async function openAuthenticatedFile(path: string) {
+  const viewer = window.open("about:blank", "_blank");
+  if (!viewer) throw new ApiError(0, "Allow pop-ups to view the KYC document.");
+  try {
+    const objectUrl = URL.createObjectURL(await authenticatedFileBlob(path));
+    viewer.location.href = objectUrl;
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch (cause) {
+    viewer.close();
+    throw cause;
+  }
+}
 
 export const authApi = {
   login: async (identifier: string, password: string) => {
@@ -629,10 +734,66 @@ export const propertyTypesApi = {
   deactivate: (id: string) => request<PropertyType>(`/admin/property-types/${id}`, { method: "DELETE" }),
 };
 
+export const registrationFieldsApi = {
+  list: () => request<RegistrationField[]>("/admin/registration-fields"),
+  replace: (fields: Array<Omit<RegistrationField, "id">>) =>
+    request<RegistrationField[]>("/admin/registration-fields", json("PUT", { fields })),
+};
+
 export const usersApi = {
   list: (accountType?: "staff" | "client" | "customer" | "cleaner", search?: string) =>
     request<ApiUser[]>(`/admin/users${query({ account_type: accountType, search })}`),
+  staffPhotoUrl: (id: string) => request<{ url: string }>(`/users/${id}/profile-photo-url`),
+  uploadStaffPhoto: (id: string, photo: File) => {
+    const body = new FormData();
+    body.append("photo", photo);
+    return request<ApiUser>(`/users/staff/${id}/profile-photo`, { method: "POST", body });
+  },
+  clientPlaceholder: () => request<{ url: string }>("/users/client-placeholder"),
+  cleanerPlaceholder: () => request<{ url: string }>("/users/cleaner-placeholder"),
+  myProfilePhotoUrl: () => request<{ url: string }>("/users/me/profile-photo-url"),
+  uploadMyProfilePhoto: (photo: File) => {
+    const body = new FormData();
+    body.append("photo", photo);
+    return request<ApiUser>("/users/me/profile-photo", { method: "POST", body });
+  },
+  uploadMyStaffDocument: (type: "reference-form" | "contract", document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<ApiUser>(`/users/me/staff-documents/${type}`, { method: "POST", body });
+  },
+  viewMyStaffDocument: (type: "reference-form" | "contract") =>
+    openAuthenticatedFile(`/users/me/staff-documents/${type}/content`),
+  getMyStaffDocumentPreview: (type: "reference-form" | "contract") =>
+    authenticatedFileBlob(`/users/me/staff-documents/${type}/content`),
+  uploadMyStaffKycDocument: (type: "identity" | "kra" | "good-conduct", document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<ApiUser>(`/users/me/staff-kyc-documents/${type}`, { method: "POST", body });
+  },
+  viewMyStaffKycDocument: (type: "identity" | "kra" | "good-conduct") =>
+    openAuthenticatedFile(`/users/me/staff-kyc-documents/${type}/content`),
+  getMyStaffKycDocumentPreview: (type: "identity" | "kra" | "good-conduct") =>
+    authenticatedFileBlob(`/users/me/staff-kyc-documents/${type}/content`),
   get: (id: string) => request<AdminUserDetails>(`/admin/users/${id}`),
+  uploadStaffDocument: (id: string, type: "reference-form" | "contract", document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<ApiUser>(`/users/${id}/staff-documents/${type}`, { method: "POST", body });
+  },
+  viewStaffDocument: (id: string, type: "reference-form" | "contract") =>
+    openAuthenticatedFile(`/users/${id}/staff-documents/${type}/content`),
+  getStaffDocumentPreview: (id: string, type: "reference-form" | "contract") =>
+    authenticatedFileBlob(`/users/${id}/staff-documents/${type}/content`),
+  uploadStaffKycDocument: (id: string, type: "identity" | "kra" | "good-conduct", document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<ApiUser>(`/users/${id}/staff-kyc-documents/${type}`, { method: "POST", body });
+  },
+  viewStaffKycDocument: (id: string, type: "identity" | "kra" | "good-conduct") =>
+    openAuthenticatedFile(`/users/${id}/staff-kyc-documents/${type}/content`),
+  getStaffKycDocumentPreview: (id: string, type: "identity" | "kra" | "good-conduct") =>
+    authenticatedFileBlob(`/users/${id}/staff-kyc-documents/${type}/content`),
   updateMyProfile: (
     body: Partial<{
       address_description: string;
@@ -806,6 +967,7 @@ export const paymentsApi = {
       method?: "simulated" | "mpesa";
       date_from?: string;
       date_to?: string;
+      search?: string;
       limit?: number;
       offset?: number;
     } = {},
@@ -818,6 +980,15 @@ export const paymentsApi = {
       "/payments",
       json("POST", { booking_id, ...(phone_number ? { phone_number } : {}) }),
     ),
+  subscriptionHistory: (subscriptionId: string) => request<Payment[]>(`/payments/subscriptions/${subscriptionId}`),
+  initiateSubscription: (subscriptionId: string, booking_id?: string, phone_number?: string) =>
+    request<Payment>(`/payments/subscriptions/${subscriptionId}/initiate`, json("POST", {
+      ...(booking_id ? { booking_id } : {}),
+      ...(phone_number ? { phone_number } : {}),
+    })),
+  refresh: (id: string) => request<Payment>(`/payments/${id}/refresh`, json("POST", {})),
+  retryStk: (booking_id: string, phone_number: string) =>
+    request<Payment>("/payments", json("POST", { booking_id, phone_number, use_wallet: false })),
   markBookingPaid: (
     bookingId: string,
     body: { receipt_number: string; note?: string; idempotency_key: string },
@@ -844,6 +1015,11 @@ export const paymentsApi = {
   exportUrl: (params: Record<string, string>) => `${API_BASE_URL}/payments/export${query(params)}`,
   receiptPdfUrl: (id: string) => `${API_BASE_URL}/payments/${id}/receipt.pdf`,
 };
+export type CommissionSetting = { commission_rate_percent: number | string };
+export const financeSettingsApi = {
+  get: () => request<CommissionSetting>("/admin/commission-settings"),
+  update: (body: CommissionSetting) => request<CommissionSetting>("/admin/commission-settings", json("PUT", body)),
+};
 export const payoutsApi = {
   list: (params: { cleaner_id?: string; status?: string; date_from?: string; date_to?: string } = {}) =>
     request<Payout[]>(`/payouts${query(params)}`),
@@ -865,11 +1041,45 @@ export const supportTicketsApi = {
   ) => request<SupportTicket>(`/support-tickets/${id}`, json("PATCH", body)),
 };
 export const cleanersApi = {
+  kycDocumentTypes: () => request<CleanerKycDocumentType[]>("/cleaners/kyc-document-types"),
+  saveKycDocumentTypes: (documents: CleanerKycDocumentType[]) =>
+    request<CleanerKycDocumentType[]>("/cleaners/kyc-document-types", json("PUT", { documents })),
   list: (params: Record<string, string | boolean> = {}) =>
     request<Cleaner[]>(`/cleaners${query(params)}`),
   get: (id: string) => request<Cleaner>(`/cleaners/${id}`),
   create: (body: Record<string, unknown>) =>
     request<Cleaner>("/cleaners", json("POST", body)),
+  uploadPhoto: (id: string, photo: File) => {
+    const body = new FormData();
+    body.append("photo", photo);
+    return request<Cleaner>(`/cleaners/${id}/photo`, { method: "POST", body });
+  },
+  photoUrl: (id: string) => request<{ url: string }>(`/cleaners/${id}/photo-url`),
+  uploadKycDocument: (id: string, document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<Cleaner>(`/cleaners/${id}/kyc-document`, { method: "POST", body });
+  },
+  uploadKycFile: (id: string, type: string, document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<Cleaner>(`/cleaners/${id}/kyc-documents/${type}`, { method: "POST", body });
+  },
+  viewKycFile: (id: string, type: string) =>
+    openAuthenticatedFile(`/cleaners/${id}/kyc-documents/${type}/content`),
+  getKycFilePreview: (id: string, type: string) =>
+    authenticatedFileBlob(`/cleaners/${id}/kyc-documents/${type}/content`),
+  uploadOnboardingDocument: (id: string, type: "reference-form" | "contract", document: File) => {
+    const body = new FormData();
+    body.append("document", document);
+    return request<Cleaner>(`/cleaners/${id}/documents/${type}`, { method: "POST", body });
+  },
+  viewOnboardingDocument: (id: string, type: "reference-form" | "contract") =>
+    openAuthenticatedFile(`/cleaners/${id}/documents/${type}/content`),
+  getOnboardingDocumentPreview: (id: string, type: "reference-form" | "contract") =>
+    authenticatedFileBlob(`/cleaners/${id}/documents/${type}/content`),
+  viewKycDocument: (id: string) =>
+    openAuthenticatedFile(`/cleaners/${id}/kyc-document/content`),
   update: (id: string, body: Record<string, unknown>) =>
     request<Cleaner>(`/cleaners/${id}`, json("PATCH", body)),
   availability: (id: string, body: Record<string, unknown>) =>
@@ -900,10 +1110,29 @@ export const cleanersApi = {
     request<CleanerSkill>(`/cleaners/skills/${id}`, { method: "DELETE" }),
 };
 export const servicesApi = {
-  list: (includeInactive = false) =>
-    request<Service[]>(`/services${includeInactive ? "?include_inactive=true" : ""}`),
-  get: (id: string) => request<Service>(`/services/${id}`),
+  list: async (includeInactive = false) => {
+    const services = await request<Service[]>(`/services${includeInactive ? "?include_inactive=true" : ""}`);
+    return Promise.all(services.map(async (service) => {
+      if (!service.image_url) return service;
+      try { return { ...service, image_url: (await request<{ url: string }>(`/services/${service.id}/image-url`)).url }; }
+      catch { return { ...service, image_url: null }; }
+    }));
+  },
+  get: async (id: string) => {
+    const service = await request<Service>(`/services/${id}`);
+    if (!service.image_url) return service;
+    try { return { ...service, image_url: (await request<{ url: string }>(`/services/${id}/image-url`)).url }; }
+    catch { return { ...service, image_url: null }; }
+  },
   create: (body: Record<string, unknown>) => request<Service>("/services", json("POST", body)),
+  uploadImage: async (id: string, image: File) => {
+    const body = new FormData();
+    body.append("image", image);
+    const service = await request<Service>(`/services/${id}/image`, { method: "POST", body });
+    if (!service.image_url) return service;
+    try { return { ...service, image_url: (await request<{ url: string }>(`/services/${id}/image-url`)).url }; }
+    catch { return { ...service, image_url: null }; }
+  },
   update: (id: string, body: Record<string, unknown>) =>
     request<Service>(`/services/${id}`, json("PATCH", body)),
   deactivate: (id: string) => request<Service>(`/services/${id}`, { method: "DELETE" }),
@@ -947,8 +1176,9 @@ export const servicesApi = {
     request<Record<string, unknown>>(`/services/${serviceId}/packages/${packageId}/tiers/${id}`, {
       method: "DELETE",
     }),
-  subscriptions: (params: { status?: string; customer_id?: string; package_id?: string; start_date?: string; end_date?: string } = {}) =>
-    request<Subscription[]>(`/services/subscriptions${query(params)}`),
+  subscriptions: (params: { status?: string; customer_id?: string; package_id?: string; service_id?: string; search?: string; start_date?: string; end_date?: string; limit?: number; offset?: number } = {}) =>
+    request<SubscriptionPage>(`/services/subscriptions${query(params)}`),
+  subscriptionDetails: (id: string) => request<SubscriptionDetails>(`/services/subscriptions/${id}`),
   updateSubscription: (id: string, body: Record<string, unknown>) =>
     request<Subscription>(`/services/subscriptions/${id}`, json("PATCH", body)),
   removeSubscription: (id: string) =>
