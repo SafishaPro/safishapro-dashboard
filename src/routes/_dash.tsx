@@ -54,7 +54,7 @@ function DashLayout() {
           <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 shadow-md shadow-blue-950/30 ring-1 ring-white/20">
             <Sparkles className="size-5 text-white" />
           </div>
-          <div className="min-w-0"><div className="truncate text-sm font-bold tracking-wide text-white">SAFISHA PRO</div><div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-50/90">Operations console</div></div>
+          <div className="min-w-0"><div className="truncate text-sm font-bold tracking-wide text-white">CLEAN MATCH</div><div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-50/90">Operations console</div></div>
         </div>
         <nav aria-label="Main navigation" className="sidebar-nav flex-1 space-y-5 overflow-y-auto px-3 py-5">
           {sections.map(([section, list]) => (

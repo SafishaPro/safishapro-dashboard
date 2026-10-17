@@ -2,14 +2,7 @@ import { toast } from "sonner";
 
 // Keep API requests on the dashboard origin. The dev-server and hosting
 // rewrites proxy this path to the API, avoiding browser CORS checks.
-const configuredApiOrigin = import.meta.env.DEV
-  ? (import.meta.env.VITE_API_BASE_URL as string | undefined)
-      ?.trim()
-      .replace(/\/+$/, "")
-  : undefined;
-const API_BASE_URL = configuredApiOrigin
-  ? `${configuredApiOrigin}/api/v1`
-  : "/api/v1";
+const API_BASE_URL = "/api/v1";
 const SESSION_KEY = "safishapro_admin_session";
 export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 export const MEDIA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;

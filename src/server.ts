@@ -7,6 +7,11 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+const API_ORIGIN =
+  typeof process !== "undefined"
+    ? (process.env.API_ORIGIN ?? "https://api.clean-match.co.ke")
+    : "https://api.clean-match.co.ke";
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -47,6 +52,28 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const requestUrl = new URL(request.url);
+      if (requestUrl.pathname === "/api" || requestUrl.pathname.startsWith("/api/")) {
+        const apiUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, API_ORIGIN);
+        const headers = new Headers(request.headers);
+        headers.delete("host");
+        headers.delete("content-length");
+        headers.delete("accept-encoding");
+
+        const hasBody = !["GET", "HEAD"].includes(request.method.toUpperCase());
+        const upstream = await fetch(apiUrl, {
+          method: request.method,
+          headers,
+          body: hasBody ? await request.arrayBuffer() : undefined,
+          redirect: "manual",
+        });
+        return new Response(upstream.body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: upstream.headers,
+        });
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

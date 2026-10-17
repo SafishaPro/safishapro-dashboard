@@ -114,7 +114,7 @@ function SettingsPage() {
   const availableGroups = groups.map((group) => ({ ...group, items: group.routes.map((route) => allowed.get(route)).filter((item) => item != null) })).filter((group) => group.items.length > 0);
 
   return <div className="space-y-7">
-    <PageHeader title="System configuration" description="Manage the parts of Safisha Pro that shape service delivery, staff access, and oversight." />
+    <PageHeader title="System configuration" description="Manage the parts of Clean Match that shape service delivery, staff access, and oversight." />
     {can("cleaners.read") && <Card className="flex flex-col gap-4 border-slate-200 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><FileText className="size-5" /></span><div><h2 className="font-semibold text-slate-900">Cleaner document requirements</h2><p className="mt-1 text-sm leading-6 text-slate-600">Configure which cleaner documents are required or optional.</p></div></div>
       <Button variant="outline" disabled={!can("cleaners.update")} onClick={() => { setDocumentError(null); setDocumentMessage(null); setDocumentsDialogOpen(true); }}>Manage documents</Button>

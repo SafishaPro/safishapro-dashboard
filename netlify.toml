@@ -4,6 +4,6 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "http://192.168.100.3:8000/api/:splat"
+  to = "https://api.clean-match.co.ke/api/:splat"
   status = 200
   force = true
